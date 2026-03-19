@@ -1,0 +1,6 @@
+solver:
+  method: safeguarded_newton
+  newton_steps: 3
+  bisection_steps: 12
+  clamp_each_step: true
+  use_closed_form_seed: true

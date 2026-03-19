@@ -1,0 +1,8 @@
+name: polypgen
+root: ${oc.env:CRISP_DATA_ROOT,data}/PolypGen
+image_dir: images
+mask_dir: masks
+image_size: 352
+splits:
+  test:
+    split_file: splits/test.txt

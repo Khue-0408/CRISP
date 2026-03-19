@@ -1,0 +1,44 @@
+enabled: true
+
+boundary:
+  sigma_b: 3.0
+  mode: gaussian_soft_field
+
+teacher:
+  enabled: true
+  strict: true
+  tau: 1.0
+  gamma: 6.0
+  teacher_names: ["pranet_teacher", "polyp_pvt_teacher", "rabbit_teacher"]
+  use_entropy_agreement_barycenter: true
+
+projection:
+  lambda: 0.80
+  mu: 0.05
+  beta: 0.20
+  eta_dice: 0.50
+  alpha_min: 0.50
+  alpha_max: 1.80
+  eps_target: 1.0e-4
+  zeta: 1.0e-2
+  zmax: 12.0
+
+projector_head:
+  hidden_channels: 64
+  num_conv_layers: 2
+  norm: groupnorm
+  activation: gelu
+  predict_resolution: quarter
+  upsample_mode: bilinear
+
+warmup:
+  enabled: true
+  epochs: 15
+  schedule: linear
+
+solver:
+  method: safeguarded_newton
+  newton_steps: 3
+  bisection_steps: 12
+  clamp_each_step: true
+  use_closed_form_seed: true

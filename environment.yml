@@ -1,0 +1,27 @@
+name: crisp-replication
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch
+  - torchvision
+  - torchaudio
+  - numpy
+  - scipy
+  - scikit-image
+  - pandas
+  - pyyaml
+  - jpeg
+  - libpng
+  - pip:
+      - hydra-core
+      - omegaconf
+      - albumentations
+      - medpy
+      - tensorboard
+      - pytest
+      - black
+      - ruff
+      - mypy

@@ -1,0 +1,5 @@
+name: colondb
+root: ${oc.env:CRISP_DATA_ROOT,data}/ColonDB
+image_dir: images
+mask_dir: masks
+image_size: 352

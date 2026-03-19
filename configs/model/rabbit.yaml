@@ -1,0 +1,5 @@
+name: rabbit
+in_channels: 3
+num_classes: 1
+pretrained: false
+decoder_ch: 64

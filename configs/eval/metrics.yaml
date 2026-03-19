@@ -1,0 +1,22 @@
+segmentation_metrics:
+  - dice
+  - boundary_f1
+  - hd95
+
+calibration_metrics:
+  - ece
+  - bece
+  - ba_ece
+  - tace
+  - brier
+  - nll
+
+ece:
+  bins: 15
+
+boundary_support:
+  top_percent: 20
+
+tace:
+  threshold: 1.0e-3
+

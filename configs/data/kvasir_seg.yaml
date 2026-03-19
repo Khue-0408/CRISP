@@ -1,0 +1,14 @@
+name: kvasir_seg
+root: ${oc.env:CRISP_DATA_ROOT,data}/Kvasir-SEG
+image_dir: images
+mask_dir: masks
+image_size: 352
+random_hflip: true
+random_vflip: true
+num_workers: 8
+pin_memory: true
+splits:
+  train:
+    split_file: splits/train.txt
+  val:
+    split_file: splits/val.txt

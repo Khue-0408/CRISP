@@ -1,0 +1,4 @@
+name: unet
+in_channels: 3
+num_classes: 1
+base_channels: 32

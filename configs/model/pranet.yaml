@@ -1,0 +1,5 @@
+name: pranet
+in_channels: 3
+num_classes: 1
+pretrained: false
+channel: 32

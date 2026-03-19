@@ -1,0 +1,60 @@
+defaults:
+  - /model: pranet
+  - /crisp: default
+  - /data@source_data: kvasir_seg
+  - /data@eval_data.colondb: colondb
+  - /data@eval_data.etis: etis
+  - /data@eval_data.polypgen: polypgen
+  - /eval: metrics
+  - _self_
+
+experiment_name: taskA_pranet_crisp
+task: binary_polyp_segmentation
+seed: 0
+output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
+eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
+posthoc_output_dir: outputs/posthoc/${experiment_name}/seed_${seed}
+eval_datasets: [colondb, etis, polypgen]
+
+training:
+  epochs: 100
+  batch_size: 16
+  optimizer: adamw
+  lr_student: 1.0e-4
+  lr_projector: 2.0e-4
+  weight_decay: 1.0e-4
+  scheduler: cosine
+  mixed_precision: true
+  gradient_clip_norm: 1.0
+
+method:
+  name: crisp
+  use_crisp: true
+  use_projector: true
+  use_teachers: true
+  target_mode: boundary_posterior
+  use_boundary_weighted_task: true
+  use_identity_regularization: true
+  use_amortization_loss: true
+  allow_self_ensemble_teacher: false
+
+teachers:
+  - model:
+      name: pranet
+      in_channels: 3
+      num_classes: 1
+      pretrained: false
+      channel: 32
+    checkpoint: ${oc.env:CRISP_PRANET_TEACHER_CKPT,}
+  - model:
+      name: polyp_pvt
+      in_channels: 3
+      num_classes: 1
+      decoder_channels: 64
+    checkpoint: ${oc.env:CRISP_POLYP_PVT_TEACHER_CKPT,}
+  - model:
+      name: rabbit
+      in_channels: 3
+      num_classes: 1
+      decoder_ch: 64
+    checkpoint: ${oc.env:CRISP_RABBIT_TEACHER_CKPT,}
