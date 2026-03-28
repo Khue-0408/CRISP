@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import torch
 from torch.utils.data import DataLoader
 
 import hydra
@@ -32,6 +31,12 @@ from crisp.engine.trainer import Trainer
 from crisp.utils.logging import setup_logger
 from crisp.utils.paths import ensure_dir
 from crisp.utils.seed import seed_everything
+from crisp.utils.serialization import save_yaml
+
+
+def _strict_teacher_loading(cfg: dict) -> bool:
+    """Return whether the current config requires a fully specified teacher pool."""
+    return bool(cfg.get("crisp", {}).get("teacher", {}).get("strict", True))
 
 
 def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
@@ -57,24 +62,52 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
     if not teachers_cfg:
         return None
 
+    strict = _strict_teacher_loading(cfg)
     teachers: list[FrozenTeacher] = []
+    errors: list[str] = []
     for t in teachers_cfg:
         if not isinstance(t, dict):
+            errors.append("Teacher config entry must be a mapping.")
             continue
         model_cfg = t.get("model", None)
         ckpt = t.get("checkpoint", None)
-        if not model_cfg or not ckpt:
+        if not model_cfg:
+            errors.append("Teacher config entry is missing the `model` block.")
             continue
-        teacher_model = build_model({"model": model_cfg})
-        teachers.append(
-            FrozenTeacher(
-                teacher_model,
-                checkpoint_path=to_absolute_path(str(ckpt)),
+        if ckpt is None or not str(ckpt).strip():
+            errors.append(
+                f"Teacher '{model_cfg.get('name', 'unknown')}' is missing a checkpoint path."
             )
-        )
+            continue
 
+        ckpt_path = to_absolute_path(str(ckpt))
+        try:
+            teacher_model = build_model({"model": model_cfg})
+            teachers.append(
+                FrozenTeacher(
+                    teacher_model,
+                    checkpoint_path=ckpt_path,
+                )
+            )
+        except Exception as exc:
+            errors.append(
+                f"Failed to build/load teacher '{model_cfg.get('name', 'unknown')}' "
+                f"from checkpoint '{ckpt_path}': {exc}"
+            )
+
+    if strict and errors:
+        joined = "\n- ".join(errors)
+        raise ValueError(
+            "Paper-faithful CRISP training requires a complete frozen teacher pool.\n"
+            f"- {joined}"
+        )
     if not teachers:
         return None
+    if strict and len(teachers) != len(teachers_cfg):
+        raise ValueError(
+            "Teacher ensemble is incomplete under strict CRISP mode. "
+            f"Built {len(teachers)} teachers from {len(teachers_cfg)} configured entries."
+        )
     return TeacherEnsemble(teachers)
 
 
@@ -95,6 +128,7 @@ def main(cfg: DictConfig) -> None:
     # Hydra changes the working directory; always anchor outputs to the original cwd.
     output_dir = ensure_dir(Path(to_absolute_path(config.get("output_dir", "outputs"))))
     setup_logger(output_dir)
+    save_yaml(output_dir / "resolved_config.yaml", config)
 
     # Build model.
     model = build_model(config)
@@ -111,6 +145,7 @@ def main(cfg: DictConfig) -> None:
 
     # Build datasets and dataloaders.
     train_cfg = config.get("training", {})
+    require_validation = bool(train_cfg.get("require_validation", False))
     batch_size = train_cfg.get("batch_size", 16)
     data_cfg = config.get("source_data", {})
     num_workers = int(data_cfg.get("num_workers", train_cfg.get("num_workers", 4)))
@@ -126,10 +161,17 @@ def main(cfg: DictConfig) -> None:
         drop_last=True,
     )
 
-    # Optional validation loader.
+    # Validation loader. Paper-faithful experiment configs require source validation
+    # for model selection; debug configs may disable it explicitly.
     val_loader = None
-    try:
-        val_dataset = build_dataset(config, split="val")
+    if require_validation:
+        try:
+            val_dataset = build_dataset(config, split="val")
+        except (FileNotFoundError, KeyError) as exc:
+            raise ValueError(
+                "This experiment requires source validation for paper-faithful model "
+                "selection, but the validation split could not be built."
+            ) from exc
         val_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
@@ -137,8 +179,18 @@ def main(cfg: DictConfig) -> None:
             num_workers=num_workers,
             pin_memory=pin_memory,
         )
-    except (FileNotFoundError, KeyError):
-        pass  # No validation split available.
+    else:
+        try:
+            val_dataset = build_dataset(config, split="val")
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+            )
+        except (FileNotFoundError, KeyError):
+            val_loader = None
 
     # Build trainer and run.
     trainer = Trainer(

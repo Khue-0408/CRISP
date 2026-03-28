@@ -18,6 +18,7 @@ eval_datasets: [colondb, etis, polypgen]
 training:
   epochs: 100
   batch_size: 16
+  require_validation: true
   optimizer: adamw
   lr_student: 1.0e-4
   weight_decay: 1.0e-4

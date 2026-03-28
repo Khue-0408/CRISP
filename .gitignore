@@ -7,10 +7,12 @@ __pycache__/
 *.pyd
 
 .DS_Store
+.ipynb_checkpoints/
 
 .venv/
 condaenv.*.requirements.txt
 
+data/
 outputs/
 !outputs/.gitkeep
 

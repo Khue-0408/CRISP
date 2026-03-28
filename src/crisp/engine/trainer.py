@@ -23,7 +23,6 @@ from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
 
 from crisp.engine.checkpointing import save_checkpoint
 from crisp.modules.boundary import compute_boundary_weight
@@ -103,6 +102,7 @@ class Trainer:
 
         # Determine device.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.amp_device_type = "cuda" if self.device.type == "cuda" else "cpu"
         self.model.to(self.device)
         if self.projector is not None:
             self.projector.to(self.device)
@@ -137,9 +137,13 @@ class Trainer:
 
         # Training config.
         train_cfg = config.get("training", {})
+        self.seed = int(config.get("seed", 0))
         self.epochs = train_cfg.get("epochs", 100)
         self.mixed_precision = train_cfg.get("mixed_precision", False)
         self.gradient_clip_norm = train_cfg.get("gradient_clip_norm", 0.0)
+        self.require_validation = bool(train_cfg.get("require_validation", False))
+        self.optimizer_name = str(train_cfg.get("optimizer", "adamw")).lower()
+        self.scheduler_name = str(train_cfg.get("scheduler", "cosine")).lower()
 
         # CRISP hyperparameters.
         crisp_cfg = config.get("crisp", {})
@@ -176,7 +180,10 @@ class Trainer:
         self.warmup_epochs = warmup_cfg.get("epochs", 15)
 
         # Mixed precision scaler.
-        self.scaler = GradScaler(enabled=self.mixed_precision)
+        self.scaler = torch.amp.GradScaler(
+            self.amp_device_type,
+            enabled=self.mixed_precision and self.amp_device_type == "cuda",
+        )
 
         if self.use_teachers and self.teacher_ensemble is None and self.strict_teacher_requirement:
             raise ValueError(
@@ -201,6 +208,11 @@ class Trainer:
         """
         Build AdamW optimizer with separate lr for student and projector (§15).
         """
+        if self.optimizer_name != "adamw":
+            raise ValueError(
+                f"Unsupported optimizer '{self.optimizer_name}'. "
+                "The paper-faithful implementation currently supports only AdamW."
+            )
         train_cfg = self.config.get("training", {})
         lr_student = train_cfg.get("lr_student", 1e-4)
         lr_projector = train_cfg.get("lr_projector", 2e-4)
@@ -218,10 +230,17 @@ class Trainer:
 
     def build_scheduler(self, optimizer: torch.optim.Optimizer) -> Any:
         """
-        Build CosineAnnealingLR scheduler (§15).
+        Build the configured learning-rate scheduler (§15).
         """
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.epochs, eta_min=1e-6
+        if self.scheduler_name == "cosine":
+            return torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=self.epochs, eta_min=1e-6
+            )
+        if self.scheduler_name in {"none", "off", "disabled"}:
+            return None
+        raise ValueError(
+            f"Unsupported scheduler '{self.scheduler_name}'. "
+            "Use `cosine` for the paper default or `none` for explicit ablations."
         )
 
     def train_one_step(
@@ -235,7 +254,10 @@ class Trainer:
         images = batch["image"].to(self.device)
         masks = batch["mask"].to(self.device)
 
-        with autocast(enabled=self.mixed_precision):
+        with torch.amp.autocast(
+            device_type=self.amp_device_type,
+            enabled=self.mixed_precision and self.amp_device_type == "cuda",
+        ):
             # --- Student forward ---
             out = self.model(images)
             logits = out.logits       # [B,1,H,W] — raw z, keeps gradients
@@ -370,12 +392,44 @@ class Trainer:
 
             all_logs.append(output.logs)
 
-        self._scheduler.step()
+        if self._scheduler is not None:
+            self._scheduler.step()
 
         # Aggregate logs.
         from crisp.metrics.aggregation import average_metric_dicts
         avg = average_metric_dicts(all_logs)
         return avg
+
+    def _checkpoint_state(
+        self,
+        epoch: int,
+        train_metrics: Dict[str, float],
+        val_metrics: Optional[Dict[str, float]] = None,
+        best_val_metric: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build a reproducibility-focused checkpoint payload.
+
+        This preserves the exact composed config, optimizer/scheduler/scaler
+        states, and the run seed so checkpoints remain resumable and auditable.
+        """
+        return {
+            "epoch": epoch,
+            "seed": self.seed,
+            "model_state_dict": self.model.state_dict(),
+            "projector_state_dict": (
+                self.projector.state_dict() if self.projector is not None else None
+            ),
+            "optimizer_state_dict": self._optimizer.state_dict(),
+            "scheduler_state_dict": (
+                self._scheduler.state_dict() if self._scheduler is not None else None
+            ),
+            "grad_scaler_state_dict": self.scaler.state_dict(),
+            "config": self.config,
+            "train_metrics": train_metrics,
+            "val_metrics": val_metrics,
+            "best_val_metric": best_val_metric,
+        }
 
     def fit(
         self, train_loader: Any, val_loader: Optional[Any] = None
@@ -395,6 +449,11 @@ class Trainer:
 
         output_dir = self.config.get("output_dir", "outputs")
         best_val_metric = -float("inf")
+        if self.require_validation and val_loader is None:
+            raise ValueError(
+                "This experiment requires a source-validation loader for paper-faithful "
+                "checkpoint selection, but no validation loader was provided."
+            )
 
         for epoch in range(self.epochs):
             avg_logs = self.train_one_epoch(train_loader, epoch)
@@ -415,29 +474,21 @@ class Trainer:
                     best_val_metric = monitor
                     save_checkpoint(
                         f"{output_dir}/best.pt",
-                        {
-                            "epoch": epoch,
-                            "model_state_dict": self.model.state_dict(),
-                            "projector_state_dict": (
-                                self.projector.state_dict() if self.projector else None
-                            ),
-                            "optimizer_state_dict": self._optimizer.state_dict(),
-                            "config": self.config,
-                            "val_metrics": val_metrics,
-                        },
+                        self._checkpoint_state(
+                            epoch=epoch,
+                            train_metrics=avg_logs,
+                            val_metrics=val_metrics,
+                            best_val_metric=best_val_metric,
+                        ),
                     )
 
             # Periodic checkpoint.
             if (epoch + 1) % 10 == 0 or epoch == self.epochs - 1:
                 save_checkpoint(
                     f"{output_dir}/epoch_{epoch + 1}.pt",
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": self.model.state_dict(),
-                        "projector_state_dict": (
-                            self.projector.state_dict() if self.projector else None
-                        ),
-                        "optimizer_state_dict": self._optimizer.state_dict(),
-                        "config": self.config,
-                    },
+                    self._checkpoint_state(
+                        epoch=epoch,
+                        train_metrics=avg_logs,
+                        best_val_metric=best_val_metric,
+                    ),
                 )

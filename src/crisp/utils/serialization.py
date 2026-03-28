@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+import yaml
+
 
 def save_json(path: Path, data: Dict[str, Any]) -> None:
     """
@@ -41,3 +43,16 @@ def save_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def save_yaml(path: Path, data: Dict[str, Any]) -> None:
+    """
+    Save a dictionary as a YAML file.
+
+    This is used for resolved config snapshots so training/evaluation runs keep
+    a human-readable record of the exact composed experiment configuration.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False)

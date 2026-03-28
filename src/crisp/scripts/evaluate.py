@@ -85,14 +85,21 @@ def main(cfg: DictConfig) -> None:
 
     datasets = config.get("eval_datasets", ["colondb", "etis", "polypgen"])
     projector_off_only = bool(config.get("projector_off_only", False))
+    skip_missing = bool(config.get("eval", {}).get("skip_missing_datasets", False))
 
     for ds_name in datasets:
         try:
             ds_config = _resolve_eval_dataset_config(config, ds_name)
             dataset = build_dataset(ds_config, split="test")
-        except (FileNotFoundError, KeyError):
-            print(f"Skipping {ds_name}: dataset not found.")
-            continue
+        except (FileNotFoundError, KeyError) as exc:
+            if skip_missing:
+                print(f"Skipping {ds_name}: dataset not found.")
+                continue
+            raise ValueError(
+                f"Requested evaluation dataset '{ds_name}' could not be built. "
+                "Paper-faithful target evaluation should fail loudly when a target "
+                "dataset is missing."
+            ) from exc
 
         eval_data_cfg = ds_config.get("source_data", {})
         eval_cfg = config.get("eval", {})
