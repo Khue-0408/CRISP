@@ -14,6 +14,8 @@ from typing import Dict, List
 import torch
 import torch.nn as nn
 
+from crisp.utils.model_loading import load_model_checkpoint
+
 
 class FrozenTeacher(nn.Module):
     """
@@ -32,23 +34,28 @@ class FrozenTeacher(nn.Module):
     instruct.md §13: Teacher outputs must be detached.
     """
 
-    def __init__(self, model: nn.Module, checkpoint_path: str) -> None:
+    def __init__(
+        self,
+        model: nn.Module,
+        checkpoint_path: str,
+        checkpoint_loading: Dict | None = None,
+    ) -> None:
         super().__init__()
         self.model = model
         self.checkpoint_path = checkpoint_path
+        self.checkpoint_loading = checkpoint_loading or {}
         self._load_and_freeze()
 
     def _load_and_freeze(self) -> None:
         """Load checkpoint, freeze all parameters, and set eval mode."""
         if self.checkpoint_path:
-            state = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
-            # Support both raw state_dict and wrapped checkpoint dicts.
-            if "model_state_dict" in state:
-                self.model.load_state_dict(state["model_state_dict"])
-            elif "state_dict" in state:
-                self.model.load_state_dict(state["state_dict"])
-            else:
-                self.model.load_state_dict(state)
+            load_model_checkpoint(
+                self.model,
+                self.checkpoint_path,
+                strict=bool(self.checkpoint_loading.get("strict", True)),
+                state_dict_keys=self.checkpoint_loading.get("state_dict_keys"),
+                prefixes_to_strip=self.checkpoint_loading.get("prefixes_to_strip"),
+            )
         # Freeze all parameters.
         for param in self.model.parameters():
             param.requires_grad = False

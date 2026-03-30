@@ -26,9 +26,15 @@ from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.models.teacher_wrapper import FrozenTeacher, TeacherEnsemble
-from crisp.registry import build_dataset, build_model, build_projector
+from crisp.registry import (
+    build_dataset,
+    build_model,
+    build_projector,
+    get_model_decoder_channels,
+)
 from crisp.engine.trainer import Trainer
 from crisp.utils.logging import setup_logger
+from crisp.utils.model_loading import load_model_checkpoint
 from crisp.utils.paths import ensure_dir
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_yaml
@@ -37,6 +43,28 @@ from crisp.utils.serialization import save_yaml
 def _strict_teacher_loading(cfg: dict) -> bool:
     """Return whether the current config requires a fully specified teacher pool."""
     return bool(cfg.get("crisp", {}).get("teacher", {}).get("strict", True))
+
+
+def _maybe_initialize_student(model: object, cfg: dict) -> None:
+    """
+    Optionally initialize the student model from an external checkpoint.
+
+    This is a [RECOMMENDED] reproducibility hook for:
+    - baseline U-Net training from an existing initialization checkpoint,
+    - CRISP fine-tuning from a trained U-Net baseline.
+    """
+    init_cfg = cfg.get("student_init", {})
+    checkpoint = init_cfg.get("checkpoint", None)
+    if checkpoint is None or not str(checkpoint).strip():
+        return
+
+    load_model_checkpoint(
+        model,
+        to_absolute_path(str(checkpoint)),
+        strict=bool(init_cfg.get("strict", True)),
+        state_dict_keys=init_cfg.get("state_dict_keys"),
+        prefixes_to_strip=init_cfg.get("prefixes_to_strip"),
+    )
 
 
 def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
@@ -58,6 +86,8 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
     """
     teachers_cfg = cfg.get("teachers", None)
     if not teachers_cfg:
+        teachers_cfg = cfg.get("teacher_pool", {}).get("teachers", None)
+    if not teachers_cfg:
         teachers_cfg = cfg.get("crisp", {}).get("teacher", {}).get("teachers", None)
     if not teachers_cfg:
         return None
@@ -65,10 +95,14 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
     strict = _strict_teacher_loading(cfg)
     teachers: list[FrozenTeacher] = []
     errors: list[str] = []
+    enabled_teacher_count = 0
     for t in teachers_cfg:
         if not isinstance(t, dict):
             errors.append("Teacher config entry must be a mapping.")
             continue
+        if not bool(t.get("enabled", True)):
+            continue
+        enabled_teacher_count += 1
         model_cfg = t.get("model", None)
         ckpt = t.get("checkpoint", None)
         if not model_cfg:
@@ -87,6 +121,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
                 FrozenTeacher(
                     teacher_model,
                     checkpoint_path=ckpt_path,
+                    checkpoint_loading=t.get("checkpoint_loading"),
                 )
             )
         except Exception as exc:
@@ -103,10 +138,10 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
         )
     if not teachers:
         return None
-    if strict and len(teachers) != len(teachers_cfg):
+    if strict and len(teachers) != enabled_teacher_count:
         raise ValueError(
             "Teacher ensemble is incomplete under strict CRISP mode. "
-            f"Built {len(teachers)} teachers from {len(teachers_cfg)} configured entries."
+            f"Built {len(teachers)} teachers from {enabled_teacher_count} enabled entries."
         )
     return TeacherEnsemble(teachers)
 
@@ -132,12 +167,13 @@ def main(cfg: DictConfig) -> None:
 
     # Build model.
     model = build_model(config)
+    _maybe_initialize_student(model, config)
 
     # Build projector (if CRISP).
     projector = None
     method_cfg = config.get("method", {})
     if method_cfg.get("use_projector", False):
-        decoder_ch = getattr(model, "decoder_channels", 32)
+        decoder_ch = get_model_decoder_channels(model)
         projector = build_projector(config, in_channels=decoder_ch)
 
     # Build teacher ensemble (if CRISP + teachers).

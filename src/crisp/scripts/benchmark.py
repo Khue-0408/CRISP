@@ -16,7 +16,7 @@ import time
 
 import torch
 
-from crisp.registry import build_model, build_projector
+from crisp.registry import build_model, build_projector, get_model_decoder_channels
 from crisp.utils.config import load_config
 from crisp.modules.calibration import calibrate_logits_with_alpha
 
@@ -45,7 +45,7 @@ def main() -> None:
     model = build_model(config).to(device).eval()
     projector = None
     if not args.no_projector:
-        decoder_ch = getattr(model, "decoder_channels", 32)
+        decoder_ch = get_model_decoder_channels(model)
         projector = build_projector(
             config.get("crisp", {"projection": {}, "projector_head": {}}),
             in_channels=decoder_ch,

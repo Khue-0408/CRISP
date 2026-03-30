@@ -8,5 +8,5 @@ shift
 python -m crisp.scripts.evaluate \
   --config-path "$ROOT_DIR/configs" \
   --config-name experiment/taskA_pranet_crisp \
-  "checkpoint=$CHECKPOINT_PATH" \
+  "+checkpoint=$CHECKPOINT_PATH" \
   "$@"

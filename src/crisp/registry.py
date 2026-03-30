@@ -11,6 +11,7 @@ avoiding hard-coded conditionals scattered across the codebase.
 
 from __future__ import annotations
 
+from importlib import import_module
 import inspect
 from typing import Any, Dict
 
@@ -39,6 +40,38 @@ def _ensure_registry() -> None:
     })
 
 
+def _resolve_model_class(model_cfg: Dict[str, Any]) -> type:
+    """
+    Resolve either a registry-backed model name or a fully qualified class path.
+
+    ``class_path`` is a [RECOMMENDED] extension point for optional external
+    teacher models such as UACANet-L without hardcoding them into the core
+    registry before a repo-local wrapper exists.
+    """
+    class_path = model_cfg.pop("class_path", None)
+    if class_path is not None:
+        if not str(class_path).strip():
+            raise ValueError("Received an empty `class_path` for model construction.")
+        normalized = str(class_path).replace(":", ".")
+        module_name, sep, class_name = normalized.rpartition(".")
+        if not sep:
+            raise ValueError(
+                f"Invalid class_path '{class_path}'. Expected 'package.module.ClassName'."
+            )
+        module = import_module(module_name)
+        cls = getattr(module, class_name, None)
+        if cls is None:
+            raise ValueError(f"Could not resolve class '{class_name}' from '{module_name}'.")
+        return cls
+
+    name = str(model_cfg.pop("name", "pranet")).lower()
+    if name not in _MODEL_REGISTRY:
+        raise ValueError(
+            f"Unknown model '{name}'. Available: {list(_MODEL_REGISTRY.keys())}"
+        )
+    return _MODEL_REGISTRY[name]
+
+
 def build_model(config: Dict[str, Any]) -> Any:
     """
     Build and return a segmentation backbone from a configuration object.
@@ -56,14 +89,7 @@ def build_model(config: Dict[str, Any]) -> Any:
     """
     _ensure_registry()
     model_cfg = dict(config.get("model", config))
-    name = str(model_cfg.pop("name", "pranet")).lower()
-
-    if name not in _MODEL_REGISTRY:
-        raise ValueError(
-            f"Unknown model '{name}'. Available: {list(_MODEL_REGISTRY.keys())}"
-        )
-
-    cls = _MODEL_REGISTRY[name]
+    cls = _resolve_model_class(model_cfg)
     aliases = {
         "feature_channels": "channel",
     }
@@ -78,6 +104,27 @@ def build_model(config: Dict[str, Any]) -> Any:
     }
 
     return cls(**kwargs)
+
+
+def get_model_decoder_channels(model: Any) -> int:
+    """
+    Return the explicit decoder feature width required by the CRISP projector.
+
+    This avoids fragile host fallbacks and makes the host contract explicit:
+    every CRISP-compatible backbone must expose ``decoder_channels``.
+    """
+    decoder_channels = getattr(model, "decoder_channels", None)
+    if decoder_channels is None:
+        raise AttributeError(
+            f"Model '{type(model).__name__}' does not expose `decoder_channels`."
+        )
+    decoder_channels = int(decoder_channels)
+    if decoder_channels <= 0:
+        raise ValueError(
+            f"Model '{type(model).__name__}' returned invalid decoder_channels="
+            f"{decoder_channels}."
+        )
+    return decoder_channels
 
 
 def build_projector(config: Dict[str, Any], in_channels: int) -> Any:

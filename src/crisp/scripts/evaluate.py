@@ -31,7 +31,12 @@ from omegaconf import DictConfig, OmegaConf
 
 from crisp.engine.checkpointing import load_checkpoint
 from crisp.engine.evaluator import Evaluator
-from crisp.registry import build_dataset, build_model, build_projector
+from crisp.registry import (
+    build_dataset,
+    build_model,
+    build_projector,
+    get_model_decoder_channels,
+)
 from crisp.utils.logging import setup_logger
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_json
@@ -65,7 +70,7 @@ def main(cfg: DictConfig) -> None:
     projector = None
     method_cfg = config.get("method", {})
     if method_cfg.get("use_projector", False):
-        decoder_ch = getattr(model, "decoder_channels", 32)
+        decoder_ch = get_model_decoder_channels(model)
         projector = build_projector(config, in_channels=decoder_ch)
 
     # Load checkpoint.
