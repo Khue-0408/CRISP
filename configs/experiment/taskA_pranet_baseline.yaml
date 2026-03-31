@@ -1,3 +1,5 @@
+# @package _global_
+
 defaults:
   - /model: pranet
   - /data@source_data: kvasir_seg

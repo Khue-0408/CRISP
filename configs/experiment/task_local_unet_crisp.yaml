@@ -3,27 +3,32 @@
 defaults:
   - /model: unet
   - /crisp: default
-  - /teacher_pool: unet_practical
-  - /data@source_data: kvasir_seg
-  - /data@eval_data.colondb: colondb
-  - /data@eval_data.etis: etis
-  - /data@eval_data.polypgen: polypgen
+  - /teacher_pool: unet_local_practical
+  - /data@source_data: local_train_test
   - /eval: metrics
   - _self_
 
-experiment_name: taskA_unet_crisp
+experiment_name: task_local_unet_crisp
 task: binary_polyp_segmentation
 seed: 0
-output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
+
+workspace:
+  root: ${oc.env:CRISP_LOCAL_WORKSPACE_ROOT,.}
+  auto_create: true
+
+output_dir: checkpoints/students/unet/crisp/seed_${seed}
 eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
 posthoc_output_dir: outputs/posthoc/${experiment_name}/seed_${seed}
-eval_datasets: [colondb, etis]
+eval_datasets: []
 
 student_init:
-  checkpoint: ${oc.env:CRISP_UNET_CRISP_INIT_CKPT,""}
+  checkpoint: ${oc.env:CRISP_LOCAL_UNET_CRISP_INIT_CKPT,""}
   strict: true
   state_dict_keys: [model_state_dict, state_dict, model]
   prefixes_to_strip: ["module.", "model."]
+  download:
+    enabled: ${oc.decode:${oc.env:CRISP_AUTO_DOWNLOAD_WEIGHTS,false}}
+    url: ${oc.env:CRISP_LOCAL_UNET_CRISP_INIT_URL,""}
 
 training:
   epochs: 100
@@ -47,3 +52,6 @@ method:
   use_identity_regularization: true
   use_amortization_loss: true
   allow_self_ensemble_teacher: false
+
+eval:
+  auto_discover_local_test_datasets: true

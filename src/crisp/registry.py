@@ -15,7 +15,10 @@ from importlib import import_module
 import inspect
 from typing import Any, Dict
 
-from crisp.data.datasets import build_binary_segmentation_dataset
+from crisp.data.datasets import (
+    build_binary_segmentation_dataset,
+    build_local_train_val_dataset,
+)
 from crisp.data.transforms import build_eval_transforms, build_train_transforms
 from crisp.models.projector_head import CRISPProjectorHead
 
@@ -182,6 +185,14 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
     else:
         transforms = build_eval_transforms(merged_cfg)
 
+    if str(data_cfg.get("mode", "")).lower() == "local_train_test" and split in {"train", "val"}:
+        return build_local_train_val_dataset(
+            data_cfg=data_cfg,
+            split=split,
+            transforms=transforms,
+            seed=int(config.get("seed", 0)),
+        )
+
     return build_binary_segmentation_dataset(
         root=merged_cfg.get("root", "data"),
         image_dir=merged_cfg.get("image_dir", "images"),
@@ -190,4 +201,7 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
         dataset_name=merged_cfg.get("name", data_cfg.get("name", "unknown")),
         transforms=transforms,
         split_file=merged_cfg.get("split_file"),
+        image_dir_candidates=merged_cfg.get("image_dir_candidates"),
+        mask_dir_candidates=merged_cfg.get("mask_dir_candidates"),
+        strict_pairing=bool(merged_cfg.get("strict_pairing", False)),
     )

@@ -1,0 +1,43 @@
+teachers:
+  - enabled: true
+    model:
+      name: pranet
+      in_channels: 3
+      num_classes: 1
+      pretrained: false
+      channel: 32
+    checkpoint: ${oc.env:CRISP_LOCAL_UNET_TEACHER_PRANET_CKPT,checkpoints/teachers/pranet/pranet_teacher.pt}
+    download:
+      enabled: ${oc.decode:${oc.env:CRISP_AUTO_DOWNLOAD_WEIGHTS,false}}
+      url: ${oc.env:CRISP_LOCAL_UNET_TEACHER_PRANET_URL,""}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model]
+      prefixes_to_strip: ["module.", "model."]
+
+  - enabled: true
+    model:
+      name: polyp_pvt
+      in_channels: 3
+      num_classes: 1
+      decoder_channels: 64
+    checkpoint: ${oc.env:CRISP_LOCAL_UNET_TEACHER_POLYP_PVT_CKPT,checkpoints/teachers/polyp_pvt/polyp_pvt_teacher.pt}
+    download:
+      enabled: ${oc.decode:${oc.env:CRISP_AUTO_DOWNLOAD_WEIGHTS,false}}
+      url: ${oc.env:CRISP_LOCAL_UNET_TEACHER_POLYP_PVT_URL,""}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model]
+      prefixes_to_strip: ["module.", "model."]
+
+  - enabled: ${oc.decode:${oc.env:CRISP_LOCAL_ENABLE_UACANET_TEACHER,false}}
+    model:
+      class_path: ${oc.env:CRISP_LOCAL_UNET_TEACHER_UACANET_CLASS,""}
+    checkpoint: ${oc.env:CRISP_LOCAL_UNET_TEACHER_UACANET_CKPT,checkpoints/teachers/uacanet/uacanet_l_teacher.pt}
+    download:
+      enabled: ${oc.decode:${oc.env:CRISP_AUTO_DOWNLOAD_WEIGHTS,false}}
+      url: ${oc.env:CRISP_LOCAL_UNET_TEACHER_UACANET_URL,""}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model]
+      prefixes_to_strip: ["module.", "model."]

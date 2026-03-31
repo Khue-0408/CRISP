@@ -13,11 +13,14 @@ Keeping these helpers here avoids duplicated boilerplate inside dataset classes.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple
+from typing import Iterable
 
 import numpy as np
 import torch
 from PIL import Image
+
+
+SUPPORTED_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 
 def read_rgb_image(path: Path) -> np.ndarray:
@@ -101,3 +104,44 @@ def numpy_mask_to_tensor(mask: np.ndarray) -> torch.Tensor:
     if mask.ndim == 2:
         mask = mask[np.newaxis, :, :]  # [1, H, W]
     return torch.from_numpy(mask.copy()).float()
+
+
+def list_supported_files(directory: Path) -> list[Path]:
+    """
+    Return all supported image-like files from ``directory`` in sorted order.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Directory not found: {directory}")
+    return sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+    )
+
+
+def build_stem_to_path_map(directory: Path) -> dict[str, Path]:
+    """
+    Build a deterministic stem-to-path mapping for one folder of images or masks.
+    """
+    mapping: dict[str, Path] = {}
+    for path in list_supported_files(directory):
+        mapping[path.stem] = path
+    return mapping
+
+
+def candidate_dir_names(
+    preferred: str | None,
+    fallbacks: Iterable[str] | None = None,
+) -> list[str]:
+    """
+    Build a deduplicated directory-name search list preserving order.
+    """
+    names: list[str] = []
+    if preferred is not None and str(preferred).strip():
+        names.append(str(preferred))
+    for name in fallbacks or ():
+        normalized = str(name)
+        if normalized not in names:
+            names.append(normalized)
+    return names

@@ -455,7 +455,20 @@ class Trainer:
                 "checkpoint selection, but no validation loader was provided."
             )
 
+        train_batches = len(train_loader) if hasattr(train_loader, "__len__") else "unknown"
+        val_batches = len(val_loader) if (val_loader is not None and hasattr(val_loader, "__len__")) else 0
+        logger.info(
+            "Starting training: device=%s method=%s epochs=%d train_batches=%s val_batches=%s output_dir=%s",
+            self.device,
+            "crisp" if self.use_crisp else "baseline",
+            self.epochs,
+            train_batches,
+            val_batches,
+            output_dir,
+        )
+
         for epoch in range(self.epochs):
+            logger.info("Starting epoch %d/%d", epoch + 1, self.epochs)
             avg_logs = self.train_one_epoch(train_loader, epoch)
             logger.info("Epoch %d/%d — %s", epoch + 1, self.epochs, avg_logs)
             log_metrics(avg_logs, epoch, "train")

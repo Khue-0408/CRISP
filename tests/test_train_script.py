@@ -69,3 +69,27 @@ def test_teacher_pool_group_is_supported(tmp_path: Path) -> None:
     ensemble = _maybe_build_teacher_ensemble(cfg)
     assert ensemble is not None
     assert len(ensemble.teachers) == 1
+
+
+def test_teacher_builder_can_auto_download_missing_checkpoint(tmp_path: Path) -> None:
+    source_ckpt = tmp_path / "teacher_source.pt"
+    missing_destination = tmp_path / "downloads" / "teacher.pt"
+    torch.save({"model_state_dict": UNet().state_dict()}, source_ckpt)
+
+    cfg = {
+        "crisp": {"teacher": {"strict": True}},
+        "teachers": [
+            {
+                "model": {"name": "unet", "in_channels": 3, "num_classes": 1},
+                "checkpoint": str(missing_destination),
+                "download": {
+                    "enabled": True,
+                    "url": source_ckpt.as_uri(),
+                },
+            }
+        ],
+    }
+
+    ensemble = _maybe_build_teacher_ensemble(cfg)
+    assert ensemble is not None
+    assert missing_destination.exists()

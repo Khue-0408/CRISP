@@ -17,12 +17,9 @@ The main responsibility here is to compose Hydra configs coherently with the
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from torch.utils.data import DataLoader
 
 import hydra
-from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.models.teacher_wrapper import FrozenTeacher, TeacherEnsemble
@@ -35,7 +32,7 @@ from crisp.registry import (
 from crisp.engine.trainer import Trainer
 from crisp.utils.logging import setup_logger
 from crisp.utils.model_loading import load_model_checkpoint
-from crisp.utils.paths import ensure_dir
+from crisp.utils.paths import ensure_dir, ensure_local_workspace, resolve_path
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_yaml
 
@@ -60,10 +57,13 @@ def _maybe_initialize_student(model: object, cfg: dict) -> None:
 
     load_model_checkpoint(
         model,
-        to_absolute_path(str(checkpoint)),
+        resolve_path(str(checkpoint)),
         strict=bool(init_cfg.get("strict", True)),
         state_dict_keys=init_cfg.get("state_dict_keys"),
         prefixes_to_strip=init_cfg.get("prefixes_to_strip"),
+        auto_download=bool(init_cfg.get("download", {}).get("enabled", False)),
+        download_url=init_cfg.get("download", {}).get("url"),
+        description=f"student initialization checkpoint for {type(model).__name__}",
     )
 
 
@@ -105,6 +105,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
         enabled_teacher_count += 1
         model_cfg = t.get("model", None)
         ckpt = t.get("checkpoint", None)
+        download_cfg = t.get("download", {})
         if not model_cfg:
             errors.append("Teacher config entry is missing the `model` block.")
             continue
@@ -114,7 +115,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
             )
             continue
 
-        ckpt_path = to_absolute_path(str(ckpt))
+        ckpt_path = resolve_path(str(ckpt))
         try:
             teacher_model = build_model({"model": model_cfg})
             teachers.append(
@@ -122,6 +123,8 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
                     teacher_model,
                     checkpoint_path=ckpt_path,
                     checkpoint_loading=t.get("checkpoint_loading"),
+                    auto_download=bool(download_cfg.get("enabled", False)),
+                    download_url=download_cfg.get("url"),
                 )
             )
         except Exception as exc:
@@ -160,8 +163,11 @@ def main(cfg: DictConfig) -> None:
     # Setup.
     seed = config.get("seed", 0)
     seed_everything(seed)
+    workspace_cfg = config.get("workspace", {})
+    if bool(workspace_cfg.get("auto_create", False)):
+        ensure_local_workspace(workspace_cfg.get("root", "."))
     # Hydra changes the working directory; always anchor outputs to the original cwd.
-    output_dir = ensure_dir(Path(to_absolute_path(config.get("output_dir", "outputs"))))
+    output_dir = ensure_dir(resolve_path(config.get("output_dir", "outputs")))
     setup_logger(output_dir)
     save_yaml(output_dir / "resolved_config.yaml", config)
 

@@ -1,0 +1,25 @@
+name: local_train_test
+mode: local_train_test
+root: ${oc.env:CRISP_LOCAL_DATA_ROOT,.}
+train_dir: TrainDataset
+test_dir: TestDataset
+
+image_dir: image
+mask_dir: mask
+train_image_dir: image
+train_mask_dir: mask
+train_image_dir_candidates: [image, images]
+train_mask_dir_candidates: [mask, masks]
+test_image_dir_candidates: [image, images]
+test_mask_dir_candidates: [mask, masks]
+
+image_size: 352
+random_hflip: true
+random_vflip: true
+num_workers: 8
+pin_memory: true
+strict_pairing: true
+
+local_split:
+  val_fraction: ${oc.decode:${oc.env:CRISP_LOCAL_VAL_FRACTION,0.1}}
+  cache_dir: ${oc.env:CRISP_LOCAL_SPLIT_CACHE_DIR,metadata/splits/local_train_test}

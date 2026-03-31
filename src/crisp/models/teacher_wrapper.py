@@ -39,11 +39,15 @@ class FrozenTeacher(nn.Module):
         model: nn.Module,
         checkpoint_path: str,
         checkpoint_loading: Dict | None = None,
+        auto_download: bool = False,
+        download_url: str | None = None,
     ) -> None:
         super().__init__()
         self.model = model
         self.checkpoint_path = checkpoint_path
         self.checkpoint_loading = checkpoint_loading or {}
+        self.auto_download = auto_download
+        self.download_url = download_url
         self._load_and_freeze()
 
     def _load_and_freeze(self) -> None:
@@ -55,6 +59,9 @@ class FrozenTeacher(nn.Module):
                 strict=bool(self.checkpoint_loading.get("strict", True)),
                 state_dict_keys=self.checkpoint_loading.get("state_dict_keys"),
                 prefixes_to_strip=self.checkpoint_loading.get("prefixes_to_strip"),
+                auto_download=self.auto_download,
+                download_url=self.download_url,
+                description=f"teacher checkpoint for {type(self.model).__name__}",
             )
         # Freeze all parameters.
         for param in self.model.parameters():

@@ -6,7 +6,7 @@ teachers:
       num_classes: 1
       pretrained: false
       channel: 32
-    checkpoint: ${oc.env:CRISP_UNET_TEACHER_PRANET_CKPT,}
+    checkpoint: ${oc.env:CRISP_UNET_TEACHER_PRANET_CKPT,""}
     checkpoint_loading:
       strict: true
       state_dict_keys: [model_state_dict, state_dict, model]
@@ -18,7 +18,7 @@ teachers:
       in_channels: 3
       num_classes: 1
       decoder_channels: 64
-    checkpoint: ${oc.env:CRISP_UNET_TEACHER_POLYP_PVT_CKPT,}
+    checkpoint: ${oc.env:CRISP_UNET_TEACHER_POLYP_PVT_CKPT,""}
     checkpoint_loading:
       strict: true
       state_dict_keys: [model_state_dict, state_dict, model]
@@ -26,8 +26,8 @@ teachers:
 
   - enabled: ${oc.decode:${oc.env:CRISP_UNET_ENABLE_UACANET_TEACHER,false}}
     model:
-      class_path: ${oc.env:CRISP_UNET_TEACHER_UACANET_CLASS,}
-    checkpoint: ${oc.env:CRISP_UNET_TEACHER_UACANET_CKPT,}
+      class_path: ${oc.env:CRISP_UNET_TEACHER_UACANET_CLASS,""}
+    checkpoint: ${oc.env:CRISP_UNET_TEACHER_UACANET_CKPT,""}
     checkpoint_loading:
       strict: true
       state_dict_keys: [model_state_dict, state_dict, model]

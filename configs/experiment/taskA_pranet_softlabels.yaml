@@ -1,3 +1,5 @@
+# @package _global_
+
 defaults:
   - /model: pranet
   - /crisp: default
@@ -45,16 +47,16 @@ teachers:
       num_classes: 1
       pretrained: false
       channel: 32
-    checkpoint: ${oc.env:CRISP_PRANET_TEACHER_CKPT,}
+    checkpoint: ${oc.env:CRISP_PRANET_TEACHER_CKPT,""}
   - model:
       name: polyp_pvt
       in_channels: 3
       num_classes: 1
       decoder_channels: 64
-    checkpoint: ${oc.env:CRISP_POLYP_PVT_TEACHER_CKPT,}
+    checkpoint: ${oc.env:CRISP_POLYP_PVT_TEACHER_CKPT,""}
   - model:
       name: rabbit
       in_channels: 3
       num_classes: 1
       decoder_ch: 64
-    checkpoint: ${oc.env:CRISP_RABBIT_TEACHER_CKPT,}
+    checkpoint: ${oc.env:CRISP_RABBIT_TEACHER_CKPT,""}
