@@ -75,18 +75,18 @@ def _base_crisp_config(output_dir: Path) -> dict:
             "allow_self_ensemble_teacher": False,
         },
         "crisp": {
-            "boundary": {"sigma_b": 3.0, "mode": "gaussian_soft_field"},
-            "teacher": {"tau": 1.0, "gamma": 6.0, "strict": True},
+            "boundary": {"sigma_b": 6.0, "mode": "gaussian_soft_field"},
+            "teacher": {"tau": 1.0, "gamma": 1.5, "strict": True},
             "projection": {
-                "lambda": 0.8,
-                "mu": 0.05,
-                "beta": 0.2,
+                "lambda": 1.0,
+                "mu": 0.25,
+                "beta": 0.35,
                 "eta_dice": 0.5,
                 "alpha_min": 0.5,
-                "alpha_max": 1.8,
-                "eps_target": 1.0e-4,
-                "zeta": 1.0e-2,
-                "zmax": 12.0,
+                "alpha_max": 1.75,
+                "eps_target": 1.0e-3,
+                "zeta": 0.10,
+                "zmax": 8.0,
             },
             "solver": {"newton_steps": 3, "bisection_steps": 12},
             "warmup": {"enabled": False, "epochs": 15},
@@ -165,3 +165,78 @@ def test_checkpoint_payload_includes_reproducibility_state(tmp_path: Path) -> No
     assert checkpoint["grad_scaler_state_dict"] is not None
     assert checkpoint["config"]["training"]["scheduler"] == "cosine"
     assert "train_metrics" in checkpoint
+    assert "best_boundary_f1" in checkpoint
+    assert "best_bece" in checkpoint
+    assert "best_epoch" in checkpoint
+    assert checkpoint["selection_metric"] == "validation_boundary_f1_then_bece_then_dice"
+
+
+def test_thesis_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path) -> None:
+    """Updated thesis schedule should use 25 baseline epochs then ramp lambda/beta."""
+    config = _base_crisp_config(tmp_path)
+    config["crisp"]["schedule"] = {
+        "enabled": True,
+        "phase_i_epochs": 25,
+        "phase_ii_epochs": 65,
+        "phase_iii_epochs": 30,
+        "phase_ii_ramp_epochs": 10,
+    }
+    trainer = Trainer(
+        model=_TinyModel(),
+        projector=CRISPProjectorHead(feature_channels=4),
+        teacher_ensemble=_ConstantTeacherEnsemble(),
+        config=config,
+    )
+
+    phase_i = trainer._crisp_schedule_state(0)
+    phase_ii_start = trainer._crisp_schedule_state(25)
+    phase_ii_full = trainer._crisp_schedule_state(34)
+    phase_iii = trainer._crisp_schedule_state(90)
+
+    assert phase_i["phase"] == "phase_i_baseline"
+    assert phase_i["phase_id"] == 1
+    assert phase_i["crisp_active"] is False
+    assert phase_ii_start["phase"] == "phase_ii_crisp"
+    assert phase_ii_start["phase_id"] == 2
+    assert phase_ii_start["crisp_active"] is True
+    assert abs(phase_ii_start["lambda_factor"] - 0.1) < 1e-8
+    assert phase_ii_start["mu_factor"] == 1.0
+    assert phase_ii_full["lambda_factor"] == 1.0
+    assert phase_ii_full["beta_factor"] == 1.0
+    assert phase_iii["phase"] == "phase_iii_finetune"
+    assert phase_iii["phase_id"] == 3
+
+
+def test_validation_score_prefers_boundary_f1_then_lower_bece() -> None:
+    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.2}) > Trainer._validation_score(
+        {"boundary_f1": 0.7, "bece": 0.01}
+    )
+    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.1}) > Trainer._validation_score(
+        {"boundary_f1": 0.8, "bece": 0.2}
+    )
+    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.1, "dice": 0.9}) > Trainer._validation_score(
+        {"boundary_f1": 0.8, "bece": 0.1, "dice": 0.8}
+    )
+
+
+def test_training_total_epochs_and_phases_schema_controls_schedule(tmp_path: Path) -> None:
+    config = _base_crisp_config(tmp_path)
+    config["training"]["total_epochs"] = 120
+    config["training"]["phases"] = {
+        "baseline_warmup": 25,
+        "crisp_full": 65,
+        "finetune": 30,
+        "phase2_ramp_epochs": 10,
+    }
+    trainer = Trainer(
+        model=_TinyModel(),
+        projector=CRISPProjectorHead(feature_channels=4),
+        teacher_ensemble=_ConstantTeacherEnsemble(),
+        config=config,
+    )
+
+    assert trainer.epochs == 120
+    assert trainer.schedule_enabled is True
+    assert trainer._crisp_schedule_state(0)["phase"] == "phase_i_baseline"
+    assert trainer._crisp_schedule_state(25)["phase"] == "phase_ii_crisp"
+    assert trainer._crisp_schedule_state(90)["phase"] == "phase_iii_finetune"

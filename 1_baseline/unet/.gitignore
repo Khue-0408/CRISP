@@ -1,0 +1,27 @@
+*/.DS_Store
+.DS_Store
+
+*/__pycache__
+*.pyc
+*.swp
+.ipynb_checkpoints/
+
+# exclude all data files (heavy) except for the README.md files
+data/*
+!data/README.md
+
+# exclude all checkpoints files (heavy) except for the README.md files
+checkpoints/*
+!checkpoints/README.md
+
+# exclude predictions folders
+predictions_test/
+predictions_val/
+
+# ignore google slides files and video from presentation
+*.gslides
+*.mp4
+
+# ingnore information about the joint publication
+Medico 2020 - joint publication.md
+Medico 2020 - joint publication.gdoc

@@ -1,0 +1,41 @@
+teachers:
+  - enabled: true
+    name: uacanet_l
+    model: uacanet_l
+    model_config:
+      name: uacanet
+      in_channels: 3
+      num_classes: 1
+      channels: 256
+      output_stride: 16
+      pretrained: false
+    checkpoint: ${oc.env:CRISP_TEACHER_UACANET_L_CKPT,${oc.env:CRISP_UACANET_L_CKPT,1_baseline/UACANet/snapshots/UACANet-L/latest.pth}}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model, net]
+      prefixes_to_strip: ["module.", "model."]
+
+  - enabled: true
+    name: polyp_pvt
+    model: polyp_pvt
+    model_config:
+      name: polyp_pvt
+      in_channels: 3
+      num_classes: 1
+      channel: 32
+    checkpoint: ${oc.env:CRISP_TEACHER_POLYP_PVT_CKPT,${oc.env:CRISP_POLYP_PVT_CKPT,1_baseline/Polyp-PVT/model_pth/PolypPVT.pth}}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model, net]
+      prefixes_to_strip: ["module.", "model."]
+
+  - enabled: ${oc.decode:${oc.env:CRISP_ENABLE_SAMMAMBA_TEACHER,false}}
+    name: sammamba
+    model: sammamba
+    model_config:
+      class_path: ${oc.env:CRISP_SAMMAMBA_CLASS,""}
+    checkpoint: ${oc.env:CRISP_SAMMAMBA_CKPT,""}
+    checkpoint_loading:
+      strict: true
+      state_dict_keys: [model_state_dict, state_dict, model, net]
+      prefixes_to_strip: ["module.", "model."]

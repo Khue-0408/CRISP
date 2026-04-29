@@ -1,15 +1,24 @@
 segmentation_metrics:
   - dice
+  - iou
   - boundary_f1
   - hd95
 
 calibration_metrics:
   - ece
   - bece
+  - off_bece
   - ba_ece
   - tace
   - brier
   - nll
+
+flagship_table_metrics:
+  - mDice
+  - mIoU
+  - B-F1
+  - HD95
+  - bECE
 
 ece:
   bins: 15

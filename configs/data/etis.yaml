@@ -1,5 +1,5 @@
-name: etis
-root: ${oc.env:CRISP_DATA_ROOT,data}/ETIS-LaribPolypDB
+name: ETIS
+root: ${oc.env:CRISP_DATA_ROOT,data}/TestDataset/ETIS-LaribPolypDB
 image_dir: images
 mask_dir: masks
 image_size: 352

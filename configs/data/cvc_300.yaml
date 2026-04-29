@@ -1,0 +1,5 @@
+name: CVC-300
+root: ${oc.env:CRISP_DATA_ROOT,data}/TestDataset/CVC-300
+image_dir: images
+mask_dir: masks
+image_size: 352

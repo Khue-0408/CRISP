@@ -21,13 +21,19 @@ import torch.nn as nn
 from crisp.utils.paths import ensure_dir, resolve_path
 
 
-COMMON_STATE_DICT_KEYS = ("model_state_dict", "state_dict", "model")
+COMMON_STATE_DICT_KEYS = ("model_state_dict", "state_dict", "model", "net")
 COMMON_PREFIXES = ("module.", "model.")
 
 
 def _looks_like_state_dict(candidate: Any) -> bool:
     return isinstance(candidate, Mapping) and all(
         isinstance(key, str) for key in candidate.keys()
+    )
+
+
+def _looks_like_raw_tensor_state_dict(candidate: Any) -> bool:
+    return _looks_like_state_dict(candidate) and bool(candidate) and all(
+        torch.is_tensor(value) for value in candidate.values()
     )
 
 
@@ -44,18 +50,16 @@ def extract_state_dict(
     - nested under ``state_dict``
     - nested under ``model``
     """
-    keys = tuple(state_dict_keys or COMMON_STATE_DICT_KEYS)
-
-    if _looks_like_state_dict(checkpoint) and any(
-        torch.is_tensor(value) for value in checkpoint.values()
-    ):
-        return dict(checkpoint)
+    keys = tuple(dict.fromkeys([*(state_dict_keys or ()), *COMMON_STATE_DICT_KEYS]))
 
     if isinstance(checkpoint, Mapping):
         for key in keys:
             candidate = checkpoint.get(key)
-            if _looks_like_state_dict(candidate):
+            if _looks_like_raw_tensor_state_dict(candidate):
                 return dict(candidate)
+
+    if _looks_like_raw_tensor_state_dict(checkpoint):
+        return dict(checkpoint)
 
     raise ValueError(
         "Could not extract a model state_dict from checkpoint. "

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 
 from crisp.engine.evaluator import Evaluator
@@ -15,6 +16,12 @@ from crisp.models.unet import UNet
 from crisp.registry import build_model, build_projector, get_model_decoder_channels
 from crisp.scripts.train import _maybe_build_teacher_ensemble, _maybe_initialize_student
 from crisp.tests_support.toy_data import make_toy_batch
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+POLYP_PVT_BACKBONE_CKPT = (
+    REPO_ROOT / "1_baseline/Polyp-PVT/pretrained_pth/pvt_v2_b2.pth"
+)
 
 
 class _ConstantTeacherEnsemble(torch.nn.Module):
@@ -35,10 +42,10 @@ def _unet_config() -> dict:
             "base_channels": 8,
         },
         "crisp": {
-            "projection": {"alpha_min": 0.5, "alpha_max": 1.8},
+            "projection": {"alpha_min": 0.5, "alpha_max": 1.75},
             "projector_head": {"hidden_channels": 16, "norm": "groupnorm"},
-            "boundary": {"sigma_b": 3.0, "mode": "gaussian_soft_field"},
-            "teacher": {"tau": 1.0, "gamma": 6.0, "strict": True},
+            "boundary": {"sigma_b": 6.0, "mode": "gaussian_soft_field"},
+            "teacher": {"tau": 1.0, "gamma": 1.5, "strict": True},
             "solver": {"newton_steps": 3, "bisection_steps": 12},
             "warmup": {"enabled": False, "epochs": 15},
         },
@@ -133,11 +140,17 @@ def test_unet_student_init_checkpoint_loads(tmp_path: Path) -> None:
 
 
 def test_unet_teacher_pool_loads_practical_two_teacher_setup(tmp_path: Path) -> None:
+    if not POLYP_PVT_BACKBONE_CKPT.exists():
+        pytest.skip(f"Missing local Polyp-PVT backbone pretrain: {POLYP_PVT_BACKBONE_CKPT}")
+
     pranet_ckpt = tmp_path / "pranet_teacher.pt"
     polyp_pvt_ckpt = tmp_path / "polyp_pvt_teacher.pt"
 
     torch.save({"state_dict": build_model({"model": {"name": "pranet"}}).state_dict()}, pranet_ckpt)
-    torch.save({"model_state_dict": build_model({"model": {"name": "polyp_pvt"}}).state_dict()}, polyp_pvt_ckpt)
+    torch.save(
+        {"model_state_dict": build_model({"model": {"name": "polyp_pvt"}}).state_dict()},
+        polyp_pvt_ckpt,
+    )
 
     cfg = {
         "crisp": {"teacher": {"strict": True}},

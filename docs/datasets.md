@@ -1,57 +1,35 @@
 # Dataset Setup
 
-The repository expects `CRISP_DATA_ROOT` to contain:
-
-- `Kvasir-SEG/`
-- `ColonDB/`
-- `ETIS-LaribPolypDB/`
-- `PolypGen/`
-
-Expected minimal layout:
+CRISP uses a simple TrainDataset/TestDataset layout for local and thesis
+experiments.
 
 ```text
-<dataset>/
-  images/
-  masks/
-  splits/
-    train.txt
-    val.txt
-    test.txt
-```
-
-Protocol notes:
-
-- `Kvasir-SEG` uses `splits/train.txt` and `splits/val.txt` for source-only fitting and validation.
-- `ColonDB` and `ETIS` are treated as target-only evaluation sets.
-- `PolypGen` should use a precomputed patient-/center-aware `splits/test.txt`.
-
-## Local Mode
-
-The repository also supports a separate local TrainDataset/TestDataset workflow.
-
-Accepted local data roots:
-
-- `repo_root/`
-- `repo_root/data/`
-
-Expected layout:
-
-```text
-<local_data_root>/
+data/
 ├── TrainDataset/
-│   ├── image/   or images/
-│   └── mask/    or masks/
+│   ├── image/ or images/
+│   └── mask/  or masks/
 └── TestDataset/
-    ├── <dataset_name_1>/
-    │   ├── image/ or images/
-    │   └── mask/  or masks/
-    └── <dataset_name_2>/
+    ├── Kvasir/
+    ├── CVC-ClinicDB/
+    ├── CVC-300/
+    ├── CVC-ColonDB/
+    └── ETIS-LaribPolypDB/
 ```
 
-Local-mode protocol notes:
+Each test dataset folder must contain an image folder and a mask folder. Folder
+names may be singular or plural.
 
-- Training uses all matched pairs in `TrainDataset`.
-- Validation is created deterministically from `TrainDataset` using the configured seed and `val_fraction`.
-- Split files are cached under `metadata/splits/`.
-- Evaluation auto-discovers valid immediate child datasets under `TestDataset/*`.
-- Image/mask mismatches fail loudly in local mode instead of being silently intersected.
+Protocol:
+
+- Training uses all matched image/mask pairs in `TrainDataset`.
+- Validation is created deterministically from `TrainDataset` using
+  `val_fraction=0.1` by default.
+- Evaluation auto-discovers valid immediate child folders under `TestDataset`.
+- Missing folders, empty datasets, and image/mask pairing mismatches fail loudly.
+- Exact benchmark counts are not enforced by default.
+
+Check the data tree with:
+
+```bash
+bash scripts/verify_data.sh --root ./data --non-strict
+```

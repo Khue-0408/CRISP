@@ -3,6 +3,7 @@ Segmentation geometry metrics.
 
 The main metrics needed for the CRISP replication are:
 - Dice,
+- IoU,
 - Boundary-F1,
 - HD95.
 
@@ -46,6 +47,21 @@ def dice_score(
     t = true_mask.float().reshape(-1)
     intersection = (p * t).sum()
     return (2.0 * intersection + eps) / (p.sum() + t.sum() + eps)
+
+
+def iou_score(
+    pred_mask: torch.Tensor,
+    true_mask: torch.Tensor,
+    eps: float = 1.0e-6,
+) -> torch.Tensor:
+    """
+    Compute intersection-over-union between binary prediction and ground truth.
+    """
+    p = pred_mask.float().reshape(-1)
+    t = true_mask.float().reshape(-1)
+    intersection = (p * t).sum()
+    union = p.sum() + t.sum() - intersection
+    return (intersection + eps) / (union + eps)
 
 
 def boundary_f1_score(

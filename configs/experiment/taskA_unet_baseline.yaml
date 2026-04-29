@@ -3,6 +3,9 @@
 defaults:
   - /model: unet
   - /data@source_data: kvasir_seg
+  - /data@eval_data.kvasir: kvasir_test
+  - /data@eval_data.cvc_clinicdb: cvc_clinicdb
+  - /data@eval_data.cvc_300: cvc_300
   - /data@eval_data.colondb: colondb
   - /data@eval_data.etis: etis
   - /data@eval_data.polypgen: polypgen
@@ -15,7 +18,7 @@ seed: 0
 output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
 eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
 posthoc_output_dir: outputs/posthoc/${experiment_name}/seed_${seed}
-eval_datasets: [colondb, etis]
+eval_datasets: [kvasir, cvc_clinicdb, cvc_300, colondb, etis]
 
 student_init:
   checkpoint: ${oc.env:CRISP_UNET_BASELINE_INIT_CKPT,""}
@@ -24,7 +27,7 @@ student_init:
   prefixes_to_strip: ["module.", "model."]
 
 training:
-  epochs: 100
+  epochs: 120
   batch_size: 16
   require_validation: true
   optimizer: adamw

@@ -22,23 +22,23 @@ from crisp.models.projector_head import CRISPProjectorHead
 
 def test_crisp_core_invariants_smoke() -> None:
     B, H, W = 2, 32, 32
-    alpha_min, alpha_max = 0.5, 1.8
-    lam, mu = 0.8, 0.05
-    eps_t = 1e-4
-    zeta, zmax = 1e-2, 12.0
+    alpha_min, alpha_max = 0.5, 1.75
+    lam, mu = 1.0, 0.25
+    eps_t = 1e-3
+    zeta, zmax = 0.10, 8.0
 
     # Fake logits and mask.
     z = torch.randn(B, 1, H, W) * 3.0
     y = (torch.rand(B, 1, H, W) > 0.5).float()
 
     # Boundary weights (soft field).
-    wb = compute_boundary_weight(y, sigma_b=3.0)
+    wb = compute_boundary_weight(y, sigma_b=6.0)
     assert wb.shape == y.shape
     assert (wb >= 0).all() and (wb <= 1).all()
 
     # Teacher posterior (detached teacher probs).
     teachers = [torch.sigmoid(torch.randn(B, 1, H, W)).detach() for _ in range(3)]
-    pT, weights = aggregate_teacher_posterior(teachers, tau=1.0, gamma=6.0)
+    pT, weights = aggregate_teacher_posterior(teachers, tau=1.0, gamma=1.5)
     assert not pT.requires_grad
     assert weights.shape[0] == 3
 
@@ -76,4 +76,3 @@ def test_crisp_core_invariants_smoke() -> None:
     support = boundary_support_mask(wb, top_percent=20.0)
     assert support.shape == wb.shape
     assert support.sum(dim=(1, 2, 3)).min() >= 1
-

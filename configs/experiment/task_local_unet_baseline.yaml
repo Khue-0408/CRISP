@@ -29,7 +29,7 @@ student_init:
     url: ${oc.env:CRISP_LOCAL_UNET_BASELINE_INIT_URL,""}
 
 training:
-  epochs: 100
+  epochs: 120
   batch_size: 16
   require_validation: true
   optimizer: adamw

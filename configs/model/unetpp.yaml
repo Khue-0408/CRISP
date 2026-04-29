@@ -1,0 +1,4 @@
+name: unetpp
+in_channels: 3
+num_classes: 1
+deep_supervision: true

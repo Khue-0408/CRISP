@@ -225,6 +225,15 @@ def build_dataset_samples(
                 )
         common_stems = [stem for stem in common_stems if stem in allowed_ids]
 
+    if not common_stems:
+        detail = ""
+        if allowed_ids is not None:
+            detail = f" after filtering by split file {split_file}"
+        raise ValueError(
+            f"No matched image/mask pairs found in {root}{detail}. "
+            f"Image directory: {img_dir}; mask directory: {msk_dir}."
+        )
+
     records: List[SampleRecord] = []
     for stem in common_stems:
         records.append(

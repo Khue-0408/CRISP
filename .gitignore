@@ -1,3 +1,4 @@
+# Python caches
 __pycache__/
 .pytest_cache/
 .mypy_cache/
@@ -6,14 +7,66 @@ __pycache__/
 *.pyo
 *.pyd
 
+# OS/editor files
 .DS_Store
 .ipynb_checkpoints/
-
 .venv/
 condaenv.*.requirements.txt
 
-data/
-outputs/
-!outputs/.gitkeep
+# Local data, checkpoints, outputs, and runtime artifacts
+/data/
+/checkpoints/
+/outputs/
+/logs/
+/cache/
+/metadata/
+/Figures/
+/notebook/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.zip
+*.tar
+*.tar.gz
+*.npy
+*.npz
+*.ipynb
 
+# Internal agent/context files
+/.ai/
+/.agent/
+/.local/
+AGENTS.md
+MEMORY.md
+Pasted text.txt
+CRISP_CONTEXT_*.md
+CRISP_CODEBASE_*.md
+*_report.md
+docs/*context*.md
+docs/*CONTEXT*.md
+docs/*rewrite*.md
+docs/*REWRITE*.md
+docs/*report*.md
+docs/*REPORT*.md
+instruct.md
+3_Methodology.tex
+4_Experimental_analysis_polished.tex
+zip.py
+
+# Baseline source policy: keep only source needed for adapters.
+1_baseline/**/.git/
+1_baseline/**/__pycache__/
+1_baseline/**/*.pyc
+1_baseline/**/*.ipynb
+1_baseline/**/model_pth/
+1_baseline/**/pretrained_pth/
+1_baseline/**/snapshots/
+1_baseline/**/output/
+1_baseline/**/outputs/
+1_baseline/**/kvasir-seg-best-checkpoint/
+1_baseline/**/checkpoints/
+1_baseline/**/data/
+
+# Packaging
 src/*.egg-info/

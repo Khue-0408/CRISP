@@ -2,4 +2,4 @@ name: polyp_pvt
 in_channels: 3
 num_classes: 1
 pretrained: false
-decoder_channels: 64
+decoder_channels: 32

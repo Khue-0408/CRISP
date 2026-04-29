@@ -13,6 +13,7 @@ from typing import Dict, List
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from crisp.utils.model_loading import load_model_checkpoint
 
@@ -89,14 +90,37 @@ class FrozenTeacher(nn.Module):
             Foreground probability tensor of shape [B, 1, H, W], detached.
         """
         out = self.model(x)
-        # Support both SegmentationOutput dataclass and raw tensor returns.
+        # Support SegmentationOutput, raw tensors, baseline dict outputs, and
+        # multi-output baseline tuples/lists.
         if hasattr(out, "logits"):
             logits = out.logits
+        elif isinstance(out, dict):
+            if "pred" not in out:
+                raise ValueError(
+                    f"Teacher dict output must contain `pred`, got keys={list(out)}."
+                )
+            logits = out["pred"]
+        elif isinstance(out, (tuple, list)):
+            if not out:
+                raise ValueError("Teacher returned an empty tuple/list.")
+            tensor_outputs = [item for item in out if torch.is_tensor(item)]
+            if not tensor_outputs:
+                raise ValueError("Teacher tuple/list output did not contain tensors.")
+            logits = tensor_outputs[0]
+            for item in tensor_outputs[1:]:
+                logits = logits + item
         elif isinstance(out, torch.Tensor):
             logits = out
         else:
             raise ValueError(f"Unexpected teacher output type: {type(out)}")
 
+        if logits.shape[2:] != x.shape[2:]:
+            logits = F.interpolate(
+                logits,
+                size=x.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
         probs = torch.sigmoid(logits)
         return probs.detach()
 

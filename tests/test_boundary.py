@@ -21,7 +21,7 @@ def test_boundary_weight_shape() -> None:
     mask = torch.zeros(2, 1, 32, 32)
     mask[:, :, 8:24, 8:24] = 1.0  # centered square
 
-    wb = compute_boundary_weight(mask, sigma_b=3.0)
+    wb = compute_boundary_weight(mask, sigma_b=6.0)
     assert wb.shape == (2, 1, 32, 32), f"Shape mismatch: {wb.shape}"
 
 
@@ -30,7 +30,7 @@ def test_boundary_weight_range() -> None:
     mask = torch.zeros(1, 1, 64, 64)
     mask[:, :, 16:48, 16:48] = 1.0
 
-    wb = compute_boundary_weight(mask, sigma_b=3.0)
+    wb = compute_boundary_weight(mask, sigma_b=6.0)
     assert wb.min() >= 0.0, f"Min below 0: {wb.min()}"
     assert wb.max() <= 1.0 + 1e-6, f"Max above 1: {wb.max()}"
 
@@ -40,7 +40,7 @@ def test_boundary_peaks_at_boundary() -> None:
     mask = torch.zeros(1, 1, 64, 64)
     mask[:, :, 16:48, 16:48] = 1.0
 
-    wb = compute_boundary_weight(mask, sigma_b=3.0)
+    wb = compute_boundary_weight(mask, sigma_b=6.0)
 
     # Center pixel (32, 32) should have lower weight than boundary pixel (16, 16).
     center_val = wb[0, 0, 32, 32].item()
@@ -70,6 +70,6 @@ def test_hard_band_mode() -> None:
     """Hard band ablation should produce binary weights."""
     mask = torch.zeros(1, 1, 32, 32)
     mask[:, :, 8:24, 8:24] = 1.0
-    wb = compute_boundary_weight(mask, sigma_b=3.0, mode="hard_band")
+    wb = compute_boundary_weight(mask, sigma_b=6.0, mode="hard_band")
     unique_vals = wb.unique()
     assert all(v in (0.0, 1.0) for v in unique_vals.tolist())

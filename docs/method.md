@@ -1,6 +1,6 @@
-# Method Guide
+# Method
 
-This document maps the CRISP mathematics to implementation modules.
+This document maps the CRISP method objects to implementation modules.
 
 ## Core Objects
 

@@ -194,7 +194,7 @@ def crisp_amortization_loss(
     boundary_weight: torch.Tensor,
     logits: torch.Tensor,
     zeta: float,
-    zmax: float = 12.0,
+    zmax: float = 8.0,
 ) -> Dict[str, torch.Tensor]:
     """
     Compute the CRISP amortization consistency loss.
@@ -266,7 +266,7 @@ def crisp_total_loss(
     amort_loss_dict:
         Dictionary produced by ``crisp_amortization_loss``.
     beta_value:
-        Weight applied to the amortization term (default 0.20).
+        Weight applied to the amortization term (thesis default 0.35).
 
     Returns
     -------

@@ -32,14 +32,20 @@ def _ensure_registry() -> None:
         return
     from crisp.models.pranet import PraNet
     from crisp.models.unet import UNet
+    from crisp.models.unetpp import UNetPP
     from crisp.models.polyp_pvt import PolypPVT
     from crisp.models.rabbit import RaBiT
+    from crisp.models.uacanet import UACANet
 
     _MODEL_REGISTRY.update({
         "pranet": PraNet,
         "unet": UNet,
+        "unetpp": UNetPP,
+        "unet++": UNetPP,
         "polyp_pvt": PolypPVT,
         "rabbit": RaBiT,
+        "uacanet": UACANet,
+        "uacanet_l": UACANet,
     })
 
 
@@ -154,7 +160,7 @@ def build_projector(config: Dict[str, Any], in_channels: int) -> Any:
         feature_channels=in_channels,
         hidden_channels=proj_cfg.get("hidden_channels", 64),
         alpha_min=alpha_cfg.get("alpha_min", 0.50),
-        alpha_max=alpha_cfg.get("alpha_max", 1.80),
+        alpha_max=alpha_cfg.get("alpha_max", 1.75),
         norm=proj_cfg.get("norm", "groupnorm"),
     )
 

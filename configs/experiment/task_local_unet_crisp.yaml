@@ -3,7 +3,7 @@
 defaults:
   - /model: unet
   - /crisp: default
-  - /teacher_pool: unet_local_practical
+  - /teacher_pool: thesis_default
   - /data@source_data: local_train_test
   - /eval: metrics
   - _self_
@@ -31,7 +31,7 @@ student_init:
     url: ${oc.env:CRISP_LOCAL_UNET_CRISP_INIT_URL,""}
 
 training:
-  epochs: 100
+  epochs: 120
   batch_size: 16
   require_validation: true
   optimizer: adamw

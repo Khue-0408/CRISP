@@ -12,7 +12,7 @@ This file is *wiring only*. It must not modify any mathematical object defined i
 The main responsibility here is to compose Hydra configs coherently with the
 `configs/` folder so the repository is runnable via:
 
-  python -m crisp.scripts.train --config-path ../../configs --config-name experiment/taskA_pranet_crisp
+  python -m crisp.scripts.train --config-path ../../../configs --config-name experiment/taskA_pranet_crisp
 """
 
 from __future__ import annotations
@@ -40,6 +40,46 @@ from crisp.utils.serialization import save_yaml
 def _strict_teacher_loading(cfg: dict) -> bool:
     """Return whether the current config requires a fully specified teacher pool."""
     return bool(cfg.get("crisp", {}).get("teacher", {}).get("strict", True))
+
+
+def _teacher_model_config(entry: dict) -> dict | None:
+    """Normalize verbose and shorthand teacher-pool config entries."""
+    model_cfg = entry.get("model_config", None)
+    if isinstance(model_cfg, dict):
+        return dict(model_cfg)
+
+    model_value = entry.get("model", None)
+    if isinstance(model_value, dict):
+        return dict(model_value)
+    if not isinstance(model_value, str):
+        return None
+
+    name = model_value.lower()
+    aliases = {
+        "uacanet_l": {
+            "name": "uacanet_l",
+            "in_channels": 3,
+            "num_classes": 1,
+            "channels": 256,
+            "output_stride": 16,
+            "pretrained": False,
+        },
+        "uacanet": {
+            "name": "uacanet",
+            "in_channels": 3,
+            "num_classes": 1,
+            "channels": 256,
+            "output_stride": 16,
+            "pretrained": False,
+        },
+        "polyp_pvt": {
+            "name": "polyp_pvt",
+            "in_channels": 3,
+            "num_classes": 1,
+            "channel": 32,
+        },
+    }
+    return dict(aliases.get(name, {"name": model_value}))
 
 
 def _maybe_initialize_student(model: object, cfg: dict) -> None:
@@ -74,7 +114,8 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
     Expected (minimal) config shape
     -------------------------------
     teachers:
-      - model: {name: pranet, in_channels: 3, pretrained: false}
+      - name: uacanet_l
+        model: uacanet_l
         checkpoint: /path/to/checkpoint.pt
 
     Returns ``None`` if no valid teachers are specified.
@@ -103,7 +144,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
         if not bool(t.get("enabled", True)):
             continue
         enabled_teacher_count += 1
-        model_cfg = t.get("model", None)
+        model_cfg = _teacher_model_config(t)
         ckpt = t.get("checkpoint", None)
         download_cfg = t.get("download", {})
         if not model_cfg:
@@ -111,7 +152,8 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
             continue
         if ckpt is None or not str(ckpt).strip():
             errors.append(
-                f"Teacher '{model_cfg.get('name', 'unknown')}' is missing a checkpoint path."
+                f"Teacher '{t.get('name', model_cfg.get('name', 'unknown'))}' "
+                "is missing a checkpoint path."
             )
             continue
 
@@ -129,7 +171,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
             )
         except Exception as exc:
             errors.append(
-                f"Failed to build/load teacher '{model_cfg.get('name', 'unknown')}' "
+                f"Failed to build/load teacher '{t.get('name', model_cfg.get('name', 'unknown'))}' "
                 f"from checkpoint '{ckpt_path}': {exc}"
             )
 

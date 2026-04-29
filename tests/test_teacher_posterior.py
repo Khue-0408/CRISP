@@ -20,7 +20,7 @@ def test_teacher_weights_sum_to_one() -> None:
     """Ensure teacher aggregation weights form a proper simplex at each pixel."""
     M = 3
     teacher_probs = [torch.rand(2, 1, 8, 8) for _ in range(M)]
-    weights = compute_teacher_weights(teacher_probs, tau=1.0, gamma=6.0)
+    weights = compute_teacher_weights(teacher_probs, tau=1.0, gamma=1.5)
 
     assert weights.shape == (M, 2, 1, 8, 8)
     weight_sum = weights.sum(dim=0)
@@ -32,7 +32,7 @@ def test_teacher_weights_sum_to_one() -> None:
 def test_aggregated_posterior_shape() -> None:
     """p_T should have shape [B, 1, H, W]."""
     teacher_probs = [torch.rand(4, 1, 16, 16) for _ in range(3)]
-    pT, weights = aggregate_teacher_posterior(teacher_probs, tau=1.0, gamma=6.0)
+    pT, weights = aggregate_teacher_posterior(teacher_probs, tau=1.0, gamma=1.5)
     assert pT.shape == (4, 1, 16, 16)
     assert weights.shape == (3, 4, 1, 16, 16)
 
@@ -56,6 +56,6 @@ def test_consensus_is_mean() -> None:
 def test_aggregated_posterior_in_0_1() -> None:
     """Aggregated posterior p_T should remain in [0, 1]."""
     teacher_probs = [torch.rand(2, 1, 8, 8) for _ in range(3)]
-    pT, _ = aggregate_teacher_posterior(teacher_probs, tau=1.0, gamma=6.0)
+    pT, _ = aggregate_teacher_posterior(teacher_probs, tau=1.0, gamma=1.5)
     assert pT.min() >= 0.0 - 1e-6
     assert pT.max() <= 1.0 + 1e-6

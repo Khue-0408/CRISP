@@ -39,7 +39,7 @@ class CRISPProjectorHead(nn.Module):
     alpha_min:
         Lower bound of the inverse-temperature interval (default 0.50).
     alpha_max:
-        Upper bound of the inverse-temperature interval (default 1.80).
+        Upper bound of the inverse-temperature interval (default 1.75).
     norm:
         Normalization type used inside the projector head.
 
@@ -56,7 +56,7 @@ class CRISPProjectorHead(nn.Module):
         feature_channels: int,
         hidden_channels: int = 64,
         alpha_min: float = 0.50,
-        alpha_max: float = 1.80,
+        alpha_max: float = 1.75,
         norm: str = "groupnorm",
     ) -> None:
         super().__init__()

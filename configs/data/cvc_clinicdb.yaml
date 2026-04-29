@@ -1,0 +1,5 @@
+name: CVC-ClinicDB
+root: ${oc.env:CRISP_DATA_ROOT,data}/TestDataset/CVC-ClinicDB
+image_dir: images
+mask_dir: masks
+image_size: 352

@@ -21,6 +21,8 @@ dependencies:
       - albumentations
       - medpy
       - tensorboard
+      - timm
+      - thop
       - pytest
       - black
       - ruff

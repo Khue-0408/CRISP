@@ -1,0 +1,45 @@
+# @package _global_
+
+defaults:
+  - /model: pranet
+  - /data@source_data: thesis_train_test
+  - /eval: metrics
+  - _self_
+
+experiment_name: thesis_pranet_baseline
+task: binary_polyp_segmentation
+seed: 2026
+seeds: [2026, 2027, 2028, 2029, 2030]
+output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
+eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
+eval_datasets: [Kvasir, CVC-ClinicDB, CVC-300, CVC-ColonDB, ETIS-LaribPolypDB]
+
+benchmark:
+  train_split: "all valid pairs under data/TrainDataset with deterministic val_fraction=0.1"
+  eval_split: "Kvasir-SEG, CVC-ClinicDB, CVC-300, CVC-ColonDB, ETIS"
+
+training:
+  total_epochs: 120
+  epochs: ${training.total_epochs}
+  phases:
+    baseline_warmup: 25
+    crisp_full: 65
+    finetune: 30
+    phase2_ramp_epochs: 10
+  batch_size: 16
+  require_validation: true
+  optimizer: adamw
+  lr_student: 1.0e-4
+  weight_decay: 1.0e-4
+  scheduler: cosine
+  mixed_precision: true
+  gradient_clip_norm: 1.0
+
+method:
+  name: baseline
+  use_crisp: false
+  use_projector: false
+  use_teachers: false
+
+eval:
+  auto_discover_local_test_datasets: true

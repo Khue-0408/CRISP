@@ -8,10 +8,11 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from crisp.data.datasets import discover_local_test_datasets
+from crisp.data.datasets import build_dataset_samples, discover_local_test_datasets
 from crisp.engine.evaluator import Evaluator
 from crisp.engine.trainer import Trainer
 from crisp.registry import build_dataset, build_model, build_projector, get_model_decoder_channels
@@ -102,19 +103,19 @@ def _local_config(root: Path) -> dict:
         },
         "crisp": {
             "projection": {
-                "lambda": 0.8,
-                "mu": 0.05,
-                "beta": 0.2,
+                "lambda": 1.0,
+                "mu": 0.25,
+                "beta": 0.35,
                 "eta_dice": 0.5,
                 "alpha_min": 0.5,
-                "alpha_max": 1.8,
-                "eps_target": 1.0e-4,
-                "zeta": 1.0e-2,
-                "zmax": 12.0,
+                "alpha_max": 1.75,
+                "eps_target": 1.0e-3,
+                "zeta": 0.10,
+                "zmax": 8.0,
             },
             "projector_head": {"hidden_channels": 16, "norm": "groupnorm"},
-            "boundary": {"sigma_b": 3.0, "mode": "gaussian_soft_field"},
-            "teacher": {"tau": 1.0, "gamma": 6.0, "strict": True},
+            "boundary": {"sigma_b": 6.0, "mode": "gaussian_soft_field"},
+            "teacher": {"tau": 1.0, "gamma": 1.5, "strict": True},
             "solver": {"newton_steps": 3, "bisection_steps": 12},
             "warmup": {"enabled": False, "epochs": 15},
         },
@@ -181,6 +182,25 @@ def test_local_test_dataset_discovery_supports_immediate_subfolders(tmp_path: Pa
     assert sorted(discovered.keys()) == ["CVC-ColonDB", "ETIS-LaribPolypDB"]
     assert discovered["CVC-ColonDB"]["image_dir"] == "images"
     assert discovered["ETIS-LaribPolypDB"]["mask_dir"] == "mask"
+
+
+def test_dataset_sample_builder_fails_when_no_pairs_match(tmp_path: Path) -> None:
+    image_root = tmp_path / "TrainDataset" / "image"
+    mask_root = tmp_path / "TrainDataset" / "mask"
+    image_root.mkdir(parents=True)
+    mask_root.mkdir(parents=True)
+    _write_rgb(image_root / "image_only.png", 10)
+    _write_mask(mask_root / "mask_only.png", 255)
+
+    with pytest.raises(ValueError, match="No matched image/mask pairs"):
+        build_dataset_samples(
+            root=tmp_path / "TrainDataset",
+            image_dir="image",
+            mask_dir="mask",
+            split="train",
+            dataset_name="local_train_test",
+            strict_pairing=False,
+        )
 
 
 def test_bootstrap_local_workspace_creates_expected_directories(tmp_path: Path) -> None:

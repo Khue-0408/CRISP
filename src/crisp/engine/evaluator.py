@@ -28,7 +28,7 @@ from crisp.metrics.calibration import (
     off_boundary_expected_calibration_error,
     thresholded_adaptive_calibration_error,
 )
-from crisp.metrics.segmentation import boundary_f1_score, dice_score, hd95_score
+from crisp.metrics.segmentation import boundary_f1_score, dice_score, hd95_score, iou_score
 from crisp.modules.boundary import compute_boundary_weight
 from crisp.modules.calibration import calibrate_logits_with_alpha
 from crisp.utils.tensor_ops import threshold_mask
@@ -67,7 +67,7 @@ class Evaluator:
         # Boundary config for metric computation.
         crisp_cfg = config.get("crisp", {})
         bnd_cfg = crisp_cfg.get("boundary", {})
-        self.sigma_b = bnd_cfg.get("sigma_b", 3.0)
+        self.sigma_b = bnd_cfg.get("sigma_b", 6.0)
         self.boundary_mode = bnd_cfg.get("mode", "gaussian_soft_field")
         self.top_percent = float(config.get("eval", {}).get("boundary_support", {}).get("top_percent", 20.0)) \
             if isinstance(config.get("eval", {}), dict) else 20.0
@@ -78,7 +78,7 @@ class Evaluator:
 
         proj_cfg = crisp_cfg.get("projection", {})
         self.alpha_min = proj_cfg.get("alpha_min", 0.50)
-        self.alpha_max = proj_cfg.get("alpha_max", 1.80)
+        self.alpha_max = proj_cfg.get("alpha_max", 1.75)
 
     @torch.no_grad()
     def predict_batch(
@@ -175,11 +175,13 @@ class Evaluator:
 
                 # Geometry metrics.
                 dice = dice_score(pred_i, mask_i).item()
+                iou = iou_score(pred_i, mask_i).item()
                 bf1 = boundary_f1_score(pred_i, mask_i).item()
                 hd = hd95_score(pred_i, mask_i).item()
 
                 geometry_metrics.append({
                     "dice": dice,
+                    "iou": iou,
                     "boundary_f1": bf1,
                     "hd95": hd,
                 })
@@ -229,5 +231,15 @@ class Evaluator:
 
         avg = average_metric_dicts(geometry_metrics)
         avg.update(calibration_metrics)
+        # Thesis/export aliases. Keep canonical snake_case keys for code paths
+        # such as checkpoint selection, while exposing table-ready metric names.
+        avg.update({
+            "mDice": avg["dice"],
+            "mIoU": avg["iou"],
+            "B-F1": avg["boundary_f1"],
+            "HD95": avg["hd95"],
+            "bECE": avg["bece"],
+            "off-bECE": avg["off_bece"],
+        })
         logger.info("[%s] projector=%s  %s", dataset_name, projector_on, avg)
         return avg

@@ -1,5 +1,5 @@
-name: colondb
-root: ${oc.env:CRISP_DATA_ROOT,data}/ColonDB
+name: CVC-ColonDB
+root: ${oc.env:CRISP_DATA_ROOT,data}/TestDataset/CVC-ColonDB
 image_dir: images
 mask_dir: masks
 image_size: 352

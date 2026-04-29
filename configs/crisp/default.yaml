@@ -1,27 +1,27 @@
 enabled: true
 
 boundary:
-  sigma_b: 3.0
+  sigma_b: 6.0
   mode: gaussian_soft_field
 
 teacher:
   enabled: true
   strict: true
   tau: 1.0
-  gamma: 6.0
-  teacher_names: ["pranet_teacher", "polyp_pvt_teacher", "rabbit_teacher"]
+  gamma: 1.5
+  teacher_names: ["uacanet_l_teacher", "polyp_pvt_teacher"]
   use_entropy_agreement_barycenter: true
 
 projection:
-  lambda: 0.80
-  mu: 0.05
-  beta: 0.20
+  lambda: 1.0
+  mu: 0.25
+  beta: 0.35
   eta_dice: 0.50
   alpha_min: 0.50
-  alpha_max: 1.80
-  eps_target: 1.0e-4
-  zeta: 1.0e-2
-  zmax: 12.0
+  alpha_max: 1.75
+  eps_target: 1.0e-3
+  zeta: 0.10
+  zmax: 8.0
 
 projector_head:
   hidden_channels: 64
@@ -32,9 +32,16 @@ projector_head:
   upsample_mode: bilinear
 
 warmup:
-  enabled: true
-  epochs: 15
+  enabled: false
+  epochs: 0
   schedule: linear
+
+schedule:
+  enabled: true
+  phase_i_epochs: 25
+  phase_ii_epochs: 65
+  phase_iii_epochs: 30
+  phase_ii_ramp_epochs: 10
 
 solver:
   method: safeguarded_newton

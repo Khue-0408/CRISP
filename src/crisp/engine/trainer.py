@@ -138,7 +138,7 @@ class Trainer:
         # Training config.
         train_cfg = config.get("training", {})
         self.seed = int(config.get("seed", 0))
-        self.epochs = train_cfg.get("epochs", 100)
+        self.epochs = int(train_cfg.get("total_epochs", train_cfg.get("epochs", 100)))
         self.mixed_precision = train_cfg.get("mixed_precision", False)
         self.gradient_clip_norm = train_cfg.get("gradient_clip_norm", 0.0)
         self.require_validation = bool(train_cfg.get("require_validation", False))
@@ -148,25 +148,25 @@ class Trainer:
         # CRISP hyperparameters.
         crisp_cfg = config.get("crisp", {})
         proj_cfg = crisp_cfg.get("projection", {})
-        self.lambda_value = proj_cfg.get("lambda", 0.80)
-        self.mu_value = proj_cfg.get("mu", 0.05)
-        self.beta_value = proj_cfg.get("beta", 0.20)
+        self.lambda_value = proj_cfg.get("lambda", 1.0)
+        self.mu_value = proj_cfg.get("mu", 0.25)
+        self.beta_value = proj_cfg.get("beta", 0.35)
         self.eta_dice = proj_cfg.get("eta_dice", 0.50)
         self.alpha_min = proj_cfg.get("alpha_min", 0.50)
-        self.alpha_max = proj_cfg.get("alpha_max", 1.80)
-        self.eps_target = proj_cfg.get("eps_target", 1e-4)
-        self.zeta = proj_cfg.get("zeta", 1e-2)
-        self.zmax = proj_cfg.get("zmax", 12.0)
+        self.alpha_max = proj_cfg.get("alpha_max", 1.75)
+        self.eps_target = proj_cfg.get("eps_target", 1e-3)
+        self.zeta = proj_cfg.get("zeta", 0.10)
+        self.zmax = proj_cfg.get("zmax", 8.0)
 
         # Boundary config.
         bnd_cfg = crisp_cfg.get("boundary", {})
-        self.sigma_b = bnd_cfg.get("sigma_b", 3.0)
+        self.sigma_b = bnd_cfg.get("sigma_b", 6.0)
         self.boundary_mode = bnd_cfg.get("mode", "gaussian_soft_field")
 
         # Teacher config.
         teacher_cfg = crisp_cfg.get("teacher", {})
         self.tau = teacher_cfg.get("tau", 1.0)
-        self.gamma = teacher_cfg.get("gamma", 6.0)
+        self.gamma = teacher_cfg.get("gamma", 1.5)
         self.strict_teacher_requirement = teacher_cfg.get("strict", True)
 
         # Solver config.
@@ -174,7 +174,25 @@ class Trainer:
         self.newton_steps = solver_cfg.get("newton_steps", 2)
         self.bisection_steps = solver_cfg.get("bisection_steps", 8)
 
-        # Warmup config.
+        # Thesis schedule config. When absent, keep legacy warmup behavior for
+        # focused unit tests and explicit debug configs.
+        schedule_cfg = crisp_cfg.get("schedule", {})
+        phases_cfg = train_cfg.get("phases", {})
+        self.schedule_enabled = bool(schedule_cfg.get("enabled", bool(phases_cfg)))
+        self.phase_i_epochs = int(
+            phases_cfg.get("baseline_warmup", schedule_cfg.get("phase_i_epochs", 25))
+        )
+        self.phase_ii_epochs = int(
+            phases_cfg.get("crisp_full", schedule_cfg.get("phase_ii_epochs", 65))
+        )
+        self.phase_iii_epochs = int(
+            phases_cfg.get("finetune", schedule_cfg.get("phase_iii_epochs", 30))
+        )
+        self.phase_ii_ramp_epochs = int(
+            phases_cfg.get("phase2_ramp_epochs", schedule_cfg.get("phase_ii_ramp_epochs", 10))
+        )
+
+        # Legacy warmup config.
         warmup_cfg = crisp_cfg.get("warmup", {})
         self.warmup_enabled = warmup_cfg.get("enabled", True)
         self.warmup_epochs = warmup_cfg.get("epochs", 15)
@@ -203,6 +221,60 @@ class Trainer:
         if not self.warmup_enabled or epoch >= self.warmup_epochs:
             return 1.0
         return float(epoch + 1) / float(self.warmup_epochs)
+
+    def _crisp_schedule_state(self, epoch: int) -> Dict[str, Any]:
+        """
+        Return thesis-aligned CRISP schedule state for one epoch.
+
+        Updated experimental contract:
+        - Phase I: baseline-only warm-up for 25 epochs.
+        - Phase II: CRISP active for 65 epochs with lambda/beta ramp over the
+          first 10 epochs of this phase.
+        - Phase III: full CRISP joint fine-tuning for 30 epochs.
+        """
+        if not self.schedule_enabled:
+            factor = self._warmup_factor(epoch)
+            return {
+                "phase": "legacy",
+                "phase_id": 0,
+                "crisp_active": True,
+                "lambda_factor": factor,
+                "mu_factor": factor,
+                "beta_factor": factor,
+            }
+
+        if epoch < self.phase_i_epochs:
+            return {
+                "phase": "phase_i_baseline",
+                "phase_id": 1,
+                "crisp_active": False,
+                "lambda_factor": 0.0,
+                "mu_factor": 1.0,
+                "beta_factor": 0.0,
+            }
+
+        phase_ii_end = self.phase_i_epochs + self.phase_ii_epochs
+        if epoch < phase_ii_end:
+            phase_epoch = epoch - self.phase_i_epochs
+            ramp_epochs = max(1, self.phase_ii_ramp_epochs)
+            ramp = min(1.0, float(phase_epoch + 1) / float(ramp_epochs))
+            return {
+                "phase": "phase_ii_crisp",
+                "phase_id": 2,
+                "crisp_active": True,
+                "lambda_factor": ramp,
+                "mu_factor": 1.0,
+                "beta_factor": ramp,
+            }
+
+        return {
+            "phase": "phase_iii_finetune",
+            "phase_id": 3,
+            "crisp_active": True,
+            "lambda_factor": 1.0,
+            "mu_factor": 1.0,
+            "beta_factor": 1.0,
+        }
 
     def build_optimizer(self) -> torch.optim.Optimizer:
         """
@@ -272,14 +344,24 @@ class Trainer:
                 )
 
             # --- CRISP pipeline ---
-            wf = self._warmup_factor(epoch)
+            schedule = self._crisp_schedule_state(epoch)
+            if not schedule["crisp_active"]:
+                loss_dict = baseline_bce_dice_loss(logits, masks)
+                logs = {k: v.item() for k, v in loss_dict.items()}
+                logs.update({
+                    "schedule/phase_id": float(schedule["phase_id"]),
+                    "schedule/lambda_factor": float(schedule["lambda_factor"]),
+                    "schedule/mu_factor": float(schedule["mu_factor"]),
+                    "schedule/beta_factor": float(schedule["beta_factor"]),
+                })
+                return TrainStepOutput(loss=loss_dict["loss"], logs=logs)
 
             # 1. Boundary weighting field.
             wb = compute_boundary_weight(masks, sigma_b=self.sigma_b, mode=self.boundary_mode)
             wb = wb.to(self.device)
 
             # 2. Target construction.
-            lam = self.lambda_value * wf
+            lam = self.lambda_value * float(schedule["lambda_factor"])
             if self.target_mode == "boundary_posterior":
                 if self.use_teachers and self.teacher_ensemble is not None:
                     teacher_probs = self.teacher_ensemble(images)
@@ -315,7 +397,7 @@ class Trainer:
             p_tilde = calibrate_logits_with_alpha(logits, alpha_hat)
 
             # 6. Task loss.
-            mu_w = self.mu_value * wf
+            mu_w = self.mu_value * float(schedule["mu_factor"])
             task_dict = crisp_task_loss(
                 p_tilde,
                 t_eps,
@@ -347,7 +429,7 @@ class Trainer:
                 )
 
                 # 8. Amortization loss.
-                beta_w = self.beta_value * wf
+                beta_w = self.beta_value * float(schedule["beta_factor"])
                 amort_dict = crisp_amortization_loss(
                     alpha_hat,
                     alpha_star,
@@ -364,6 +446,12 @@ class Trainer:
 
         logs = {k: v.item() for k, v in total_dict.items() if v.ndim == 0}
         logs.update({f"solver/{k}": v.item() for k, v in solver_diag.items()})
+        logs.update({
+            "schedule/phase_id": float(schedule["phase_id"]),
+            "schedule/lambda_factor": float(schedule["lambda_factor"]),
+            "schedule/mu_factor": float(schedule["mu_factor"]),
+            "schedule/beta_factor": float(schedule["beta_factor"]),
+        })
 
         return TrainStepOutput(loss=total_dict["loss"], logs=logs)
 
@@ -406,6 +494,10 @@ class Trainer:
         train_metrics: Dict[str, float],
         val_metrics: Optional[Dict[str, float]] = None,
         best_val_metric: Optional[float] = None,
+        best_boundary_f1: Optional[float] = None,
+        best_bece: Optional[float] = None,
+        best_epoch: Optional[int] = None,
+        selection_metric: str = "validation_boundary_f1_then_bece_then_dice",
     ) -> Dict[str, Any]:
         """
         Build a reproducibility-focused checkpoint payload.
@@ -429,7 +521,26 @@ class Trainer:
             "train_metrics": train_metrics,
             "val_metrics": val_metrics,
             "best_val_metric": best_val_metric,
+            "best_boundary_f1": best_boundary_f1,
+            "best_bece": best_bece,
+            "best_epoch": best_epoch,
+            "selection_metric": selection_metric,
         }
+
+    @staticmethod
+    def _validation_score(val_metrics: Dict[str, float]) -> tuple[float, float, float]:
+        """
+        Lexicographic checkpoint score: maximize B-F1, minimize bECE, then maximize Dice.
+        """
+        boundary_f1 = float(
+            val_metrics.get(
+                "boundary_f1",
+                val_metrics.get("B-F1", val_metrics.get("bf1", val_metrics.get("dice", 0.0))),
+            )
+        )
+        bece = float(val_metrics.get("bece", val_metrics.get("bECE", float("inf"))))
+        dice = float(val_metrics.get("dice", val_metrics.get("mDice", 0.0)))
+        return boundary_f1, -bece, dice
 
     def fit(
         self, train_loader: Any, val_loader: Optional[Any] = None
@@ -449,6 +560,11 @@ class Trainer:
 
         output_dir = self.config.get("output_dir", "outputs")
         best_val_metric = -float("inf")
+        best_boundary_f1: Optional[float] = None
+        best_bece: Optional[float] = None
+        best_epoch: Optional[int] = None
+        selection_metric = "validation_boundary_f1_then_bece_then_dice"
+        best_val_score = (-float("inf"), -float("inf"), -float("inf"))
         if self.require_validation and val_loader is None:
             raise ValueError(
                 "This experiment requires a source-validation loader for paper-faithful "
@@ -468,7 +584,22 @@ class Trainer:
         )
 
         for epoch in range(self.epochs):
-            logger.info("Starting epoch %d/%d", epoch + 1, self.epochs)
+            schedule = self._crisp_schedule_state(epoch) if self.use_crisp else {
+                "phase": "baseline",
+                "phase_id": 0,
+                "crisp_active": False,
+                "lambda_factor": 0.0,
+                "mu_factor": 0.0,
+                "beta_factor": 0.0,
+            }
+            logger.info(
+                "Starting epoch %d/%d phase=%s lambda_factor=%.4f beta_factor=%.4f",
+                epoch + 1,
+                self.epochs,
+                schedule["phase"],
+                float(schedule["lambda_factor"]),
+                float(schedule["beta_factor"]),
+            )
             avg_logs = self.train_one_epoch(train_loader, epoch)
             logger.info("Epoch %d/%d — %s", epoch + 1, self.epochs, avg_logs)
             log_metrics(avg_logs, epoch, "train")
@@ -482,9 +613,13 @@ class Trainer:
                 )
                 log_metrics(val_metrics, epoch, "val")
 
-                monitor = val_metrics.get("dice", 0.0)
-                if monitor > best_val_metric:
-                    best_val_metric = monitor
+                val_score = self._validation_score(val_metrics)
+                if val_score > best_val_score:
+                    best_val_score = val_score
+                    best_boundary_f1 = val_score[0]
+                    best_bece = -val_score[1]
+                    best_epoch = epoch
+                    best_val_metric = best_boundary_f1
                     save_checkpoint(
                         f"{output_dir}/best.pt",
                         self._checkpoint_state(
@@ -492,6 +627,10 @@ class Trainer:
                             train_metrics=avg_logs,
                             val_metrics=val_metrics,
                             best_val_metric=best_val_metric,
+                            best_boundary_f1=best_boundary_f1,
+                            best_bece=best_bece,
+                            best_epoch=best_epoch,
+                            selection_metric=selection_metric,
                         ),
                     )
 
@@ -503,5 +642,9 @@ class Trainer:
                         epoch=epoch,
                         train_metrics=avg_logs,
                         best_val_metric=best_val_metric,
+                        best_boundary_f1=best_boundary_f1,
+                        best_bece=best_bece,
+                        best_epoch=best_epoch,
+                        selection_metric=selection_metric,
                     ),
                 )

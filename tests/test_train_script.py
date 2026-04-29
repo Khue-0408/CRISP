@@ -71,6 +71,30 @@ def test_teacher_pool_group_is_supported(tmp_path: Path) -> None:
     assert len(ensemble.teachers) == 1
 
 
+def test_teacher_pool_shorthand_model_schema_is_supported(tmp_path: Path) -> None:
+    """Thesis teacher pools use name/model shorthand plus optional model_config."""
+    ckpt_path = tmp_path / "teacher.pt"
+    torch.save({"model_state_dict": UNet().state_dict()}, ckpt_path)
+
+    cfg = {
+        "crisp": {"teacher": {"strict": True}},
+        "teacher_pool": {
+            "teachers": [
+                {
+                    "name": "debug_unet_teacher",
+                    "model": "unet",
+                    "model_config": {"name": "unet", "in_channels": 3, "num_classes": 1},
+                    "checkpoint": str(ckpt_path),
+                }
+            ]
+        },
+    }
+
+    ensemble = _maybe_build_teacher_ensemble(cfg)
+    assert ensemble is not None
+    assert len(ensemble.teachers) == 1
+
+
 def test_teacher_builder_can_auto_download_missing_checkpoint(tmp_path: Path) -> None:
     source_ckpt = tmp_path / "teacher_source.pt"
     missing_destination = tmp_path / "downloads" / "teacher.pt"

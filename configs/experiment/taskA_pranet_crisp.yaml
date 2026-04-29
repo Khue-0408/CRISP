@@ -3,10 +3,13 @@
 defaults:
   - /model: pranet
   - /crisp: default
+  - /teacher_pool: thesis_default
   - /data@source_data: kvasir_seg
+  - /data@eval_data.kvasir: kvasir_test
+  - /data@eval_data.cvc_clinicdb: cvc_clinicdb
+  - /data@eval_data.cvc_300: cvc_300
   - /data@eval_data.colondb: colondb
   - /data@eval_data.etis: etis
-  - /data@eval_data.polypgen: polypgen
   - /eval: metrics
   - _self_
 
@@ -16,10 +19,10 @@ seed: 0
 output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
 eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
 posthoc_output_dir: outputs/posthoc/${experiment_name}/seed_${seed}
-eval_datasets: [colondb, etis, polypgen]
+eval_datasets: [kvasir, cvc_clinicdb, cvc_300, colondb, etis]
 
 training:
-  epochs: 100
+  epochs: 120
   batch_size: 16
   require_validation: true
   optimizer: adamw
@@ -40,24 +43,3 @@ method:
   use_identity_regularization: true
   use_amortization_loss: true
   allow_self_ensemble_teacher: false
-
-teachers:
-  - model:
-      name: pranet
-      in_channels: 3
-      num_classes: 1
-      pretrained: false
-      channel: 32
-    checkpoint: ${oc.env:CRISP_PRANET_TEACHER_CKPT,""}
-  - model:
-      name: polyp_pvt
-      in_channels: 3
-      num_classes: 1
-      decoder_channels: 64
-    checkpoint: ${oc.env:CRISP_POLYP_PVT_TEACHER_CKPT,""}
-  - model:
-      name: rabbit
-      in_channels: 3
-      num_classes: 1
-      decoder_ch: 64
-    checkpoint: ${oc.env:CRISP_RABBIT_TEACHER_CKPT,""}

@@ -93,7 +93,7 @@ def compute_distance_to_boundary(mask: torch.Tensor) -> torch.Tensor:
 
 def compute_boundary_weight(
     mask: torch.Tensor,
-    sigma_b: float = 3.0,
+    sigma_b: float = 6.0,
     mode: Literal["gaussian_soft_field", "hard_band", "logistic_ramp"] = "gaussian_soft_field",
 ) -> torch.Tensor:
     """
@@ -105,7 +105,7 @@ def compute_boundary_weight(
         Binary segmentation mask [B, 1, H, W].
     sigma_b:
         Spread parameter controlling how far the boundary influence extends.
-        Default sigma_b = 3.0 per instruct.md §3.4.
+        Default sigma_b = 6.0 per the updated thesis benchmark contract.
     mode:
         Boundary weighting mode. The default and paper-supported mode is a
         Gaussian soft field. Alternative modes are included for ablations.

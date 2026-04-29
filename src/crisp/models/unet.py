@@ -1,9 +1,4 @@
-"""
-U-Net backbone wrapper.
-
-This module provides a standardized U-Net interface so U-Net can be used
-as both a student host and, potentially, a teacher model in the CRISP pipeline.
-"""
+"""Baseline-compatible U-Net wrapper."""
 
 from __future__ import annotations
 
@@ -14,60 +9,27 @@ import torch.nn.functional as F
 from crisp.models.base import BaseSegmentationModel, SegmentationOutput
 
 
-class _DoubleConv(nn.Module):
-    """Two 3×3 convolutions with BatchNorm and ReLU."""
-
-    def __init__(self, in_ch: int, out_ch: int) -> None:
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.block(x)
-
-
-class _Down(nn.Module):
-    """Max‑pool then double conv."""
-
-    def __init__(self, in_ch: int, out_ch: int) -> None:
-        super().__init__()
-        self.pool_conv = nn.Sequential(nn.MaxPool2d(2), _DoubleConv(in_ch, out_ch))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.pool_conv(x)
-
-
-class _Up(nn.Module):
-    """Bilinear upsample + skip‑concat + double conv."""
-
-    def __init__(self, in_ch: int, out_ch: int) -> None:
-        super().__init__()
-        self.conv = _DoubleConv(in_ch, out_ch)
-
-    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
-        x = F.interpolate(x, size=skip.shape[2:], mode="bilinear", align_corners=False)
-        x = torch.cat([x, skip], dim=1)
-        return self.conv(x)
+def _pad_to_skip(x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+    diff_y = skip.shape[2] - x.shape[2]
+    diff_x = skip.shape[3] - x.shape[3]
+    return F.pad(
+        x,
+        [
+            diff_x // 2,
+            diff_x - diff_x // 2,
+            diff_y // 2,
+            diff_y - diff_y // 2,
+        ],
+    )
 
 
 class UNet(BaseSegmentationModel):
     """
-    Standard U-Net wrapper with CRISP-compatible outputs.
+    U-Net host using the canonical baseline keyspace from ``1_baseline/unet``.
 
-    Parameters
-    ----------
-    in_channels:
-        Number of input image channels (default 3).
-    num_classes:
-        Number of output classes (default 1 for binary).
-    base_channels:
-        Base channel width; each level doubles this (default 64).
+    The module names intentionally match ``1_baseline/unet/models/unet.py`` so
+    the real checkpoint under ``1_baseline`` can load directly. The forward
+    return is adapted to CRISP by exposing quarter-resolution decoder features.
     """
 
     def __init__(
@@ -75,53 +37,65 @@ class UNet(BaseSegmentationModel):
         in_channels: int = 3,
         num_classes: int = 1,
         base_channels: int = 64,
+        channel_in: int | None = None,
+        channel_out: int | None = None,
     ) -> None:
         super().__init__()
-        c = base_channels
+        channel_in = int(channel_in if channel_in is not None else in_channels)
+        channel_out = int(channel_out if channel_out is not None else num_classes)
+        c = int(base_channels)
 
-        self.inc = _DoubleConv(in_channels, c)
-        self.down1 = _Down(c, 2 * c)
-        self.down2 = _Down(2 * c, 4 * c)
-        self.down3 = _Down(4 * c, 8 * c)
-        self.down4 = _Down(8 * c, 16 * c)
+        self.initial = self._conv_block(channel_in, c)
+        self.down0 = self._conv_block(c, 2 * c)
+        self.down1 = self._conv_block(2 * c, 4 * c)
+        self.down2 = self._conv_block(4 * c, 8 * c)
+        self.down3 = self._conv_block(8 * c, 16 * c)
 
-        self.up1 = _Up(16 * c + 8 * c, 8 * c)
-        self.up2 = _Up(8 * c + 4 * c, 4 * c)
-        self.up3 = _Up(4 * c + 2 * c, 2 * c)
-        self.up4 = _Up(2 * c + c, c)
+        self.up0_0 = nn.ConvTranspose2d(16 * c, 8 * c, kernel_size=2, stride=2)
+        self.up0_1 = self._conv_block(16 * c, 8 * c)
+        self.up1_0 = nn.ConvTranspose2d(8 * c, 4 * c, kernel_size=2, stride=2)
+        self.up1_1 = self._conv_block(8 * c, 4 * c)
+        self.up2_0 = nn.ConvTranspose2d(4 * c, 2 * c, kernel_size=2, stride=2)
+        self.up2_1 = self._conv_block(4 * c, 2 * c)
+        self.up3_0 = nn.ConvTranspose2d(2 * c, c, kernel_size=2, stride=2)
+        self.up3_1 = self._conv_block(2 * c, c)
 
-        self.out_conv = nn.Conv2d(c, num_classes, 1)
-
-        # Decoder features exposed to the projector come from
-        # the deepest decoder stage at quarter resolution.
+        self.final = nn.Conv2d(c, channel_out, kernel_size=1)
         self._decoder_channels = 4 * c
+
+    @staticmethod
+    def _conv_block(channel_in: int, channel_out: int) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Conv2d(channel_in, channel_out, kernel_size=3, padding=1),
+            nn.BatchNorm2d(channel_out),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel_out, channel_out, kernel_size=3, padding=1),
+            nn.BatchNorm2d(channel_out),
+            nn.ReLU(inplace=True),
+        )
 
     @property
     def decoder_channels(self) -> int:
-        """Number of channels in the decoder feature map for the projector."""
         return self._decoder_channels
 
     def forward(self, x: torch.Tensor) -> SegmentationOutput:
-        """
-        Run the U-Net forward pass and return logits plus decoder features.
+        x_in = self.initial(x)
+        enc0 = self.down0(F.max_pool2d(x_in, 2))
+        enc1 = self.down1(F.max_pool2d(enc0, 2))
+        enc2 = self.down2(F.max_pool2d(enc1, 2))
+        enc3 = self.down3(F.max_pool2d(enc2, 2))
 
-        Returns
-        -------
-        SegmentationOutput
-            logits at input resolution, features at ~quarter resolution.
-        """
-        x1 = self.inc(x)       # [B, c,   H,   W]
-        x2 = self.down1(x1)    # [B, 2c,  H/2, W/2]
-        x3 = self.down2(x2)    # [B, 4c,  H/4, W/4]
-        x4 = self.down3(x3)    # [B, 8c,  H/8, W/8]
-        x5 = self.down4(x4)    # [B, 16c, H/16, W/16]
+        dec0 = _pad_to_skip(self.up0_0(enc3), enc2)
+        dec0 = self.up0_1(torch.cat((enc2, dec0), dim=1))
 
-        d4 = self.up1(x5, x4)  # [B, 8c,  H/8, W/8]
-        d3 = self.up2(d4, x3)  # [B, 4c,  H/4, W/4]  ← decoder features
-        d2 = self.up3(d3, x2)  # [B, 2c,  H/2, W/2]
-        d1 = self.up4(d2, x1)  # [B, c,   H,   W]
+        dec1 = _pad_to_skip(self.up1_0(dec0), enc1)
+        dec1 = self.up1_1(torch.cat((enc1, dec1), dim=1))
 
-        logits = self.out_conv(d1)  # [B, 1, H, W]
+        dec2 = _pad_to_skip(self.up2_0(dec1), enc0)
+        dec2 = self.up2_1(torch.cat((enc0, dec2), dim=1))
 
-        # Expose quarter-resolution decoder features for the CRISP projector.
-        return SegmentationOutput(logits=logits, features=d3)
+        dec3 = _pad_to_skip(self.up3_0(dec2), x_in)
+        dec3 = self.up3_1(torch.cat((x_in, dec3), dim=1))
+
+        logits = self.final(dec3)
+        return SegmentationOutput(logits=logits, features=dec1)

@@ -1,258 +1,231 @@
 # CRISP
 
-Research-grade replication repository for:
+CRISP is a research codebase for boundary-posterior projection in binary polyp segmentation. It trains lightweight segmentation students with teacher-guided boundary posterior targets, then deploys the student with an amortized projector that is teacher-free and solver-free at inference time.
 
-CRISP: Amortized Boundary Posterior Projection for Robust and Calibrated Polyp Segmentation under Domain Shift
+## Architecture Overview
 
-## Goals
+![Architecture Overview](docs/ch3_arc.png)
 
-This repository provides:
-- A config-driven CRISP implementation with explicit detached `alpha_star`.
-- Source-only training and target-only evaluation under domain shift.
-- Modular support for teacher barycenters, boundary posterior targets, stabilized local projection, amortized projector training, and post-hoc baselines.
-- Reproducible metric export for projector-on/projector-off evaluation.
+## Qualitative Results
 
-## Planned reproduction targets
+### Seen-domain qualitative results
 
-- Task A: Kvasir-SEG -> ColonDB / ETIS / PolypGen.
-- Initial hosts: PraNet and U-Net.
-- Main outputs: Dice, Boundary-F1, HD95, ECE, bECE, BA-ECE, TACE, Brier, NLL.
-- Main comparisons: baseline, CRISP, soft-label controls, spatial-alpha baseline, boundary-posterior CE.
+![Seen-domain qualitative results](docs/ch4_qual_seen.png)
 
-## Environment
+### Unseen-domain qualitative results
 
-Set dataset and teacher checkpoint roots before running the paper-faithful CRISP config:
+![Unseen-domain qualitative results](docs/ch4_qual_unseen.png)
 
-```bash
-export CRISP_DATA_ROOT=/path/to/data
-export CRISP_PRANET_TEACHER_CKPT=/path/to/pranet_teacher.pt
-export CRISP_POLYP_PVT_TEACHER_CKPT=/path/to/polyp_pvt_teacher.pt
-export CRISP_RABBIT_TEACHER_CKPT=/path/to/rabbit_teacher.pt
+## Key Features
 
-export CRISP_UNET_TEACHER_PRANET_CKPT=/path/to/pranet_teacher.pt
-export CRISP_UNET_TEACHER_POLYP_PVT_CKPT=/path/to/polyp_pvt_teacher.pt
-export CRISP_UNET_CRISP_INIT_CKPT=/path/to/unet_baseline_or_init.pt
+- Baseline and CRISP training for U-Net, UNet++, and PraNet students.
+- UACANet-L and Polyp-PVT teacher pool for CRISP training.
+- Detached boundary-posterior projection targets with bounded amortized projector output.
+- Projector-on and projector-off evaluation for CRISP checkpoints.
+- TrainDataset/TestDataset data protocol with deterministic validation splits.
+- Geometry and calibration metrics for medical image segmentation reporting.
+- Checkpoint-compatible adapters for retained student and teacher backbones.
 
-# Optional third teacher for the U-Net path:
-export CRISP_UNET_ENABLE_UACANET_TEACHER=true
-export CRISP_UNET_TEACHER_UACANET_CLASS=package.module.UACANetL
-export CRISP_UNET_TEACHER_UACANET_CKPT=/path/to/uacanet_l_teacher.pt
-```
+## Main Results
 
-`taskA_pranet_crisp.yaml` expects a frozen three-teacher pool. If those checkpoints are missing, training now fails loudly instead of silently falling back to self-ensembling.
+CRISP improves lightweight polyp segmentors across seen and unseen domains, with consistent gains on overlap, boundary geometry, and boundary-local calibration metrics. Higher is better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and `bECE`.
 
-`taskA_unet_crisp.yaml` uses a practical two-teacher default pool:
-- PraNet
-- Polyp-PVT
+### Cross-dataset robustness on polyp segmentation: seen-domain results. Means over five seeds.
 
-The optional UACANet-L third teacher is config-driven and only activated when
-`CRISP_UNET_ENABLE_UACANET_TEACHER=true` plus a valid importable class path and
-checkpoint are provided.
+| Group | Method | Params (M) | FLOPs (G) | Kvasir-SEG mDice ↑ | Kvasir-SEG mIoU ↑ | Kvasir-SEG B-F1 ↑ | Kvasir-SEG HD95 ↓ | Kvasir-SEG bECE ↓ | CVC-ClinicDB mDice ↑ | CVC-ClinicDB mIoU ↑ | CVC-ClinicDB B-F1 ↑ | CVC-ClinicDB HD95 ↓ | CVC-ClinicDB bECE ↓ |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Prominent State-of-the-art Methods | SANet | 23.8 | 11.3 | 0.904 | 0.847 | 0.868 | 10.1 | 0.030 | 0.916 | 0.859 | 0.881 | 8.8 | 0.026 |
+| Prominent State-of-the-art Methods | MSNet | 27.6 | 17.0 | 0.907 | 0.862 | 0.875 | 9.7 | 0.028 | 0.921 | 0.879 | 0.892 | 8.1 | 0.024 |
+| Prominent State-of-the-art Methods | Polyp-PVT | 25.1 | 10.1 | 0.917 | 0.864 | 0.886 | 8.9 | 0.025 | 0.937 | 0.889 | 0.914 | 6.6 | 0.020 |
+| Prominent State-of-the-art Methods | CTNet | 44.2 | 32.6 | 0.917 | 0.863 | 0.889 | 8.7 | 0.024 | 0.936 | 0.887 | 0.913 | 6.4 | 0.019 |
+| Prominent State-of-the-art Methods | CFA-Net | 25.2 | 55.3 | 0.915 | 0.861 | 0.884 | 8.9 | 0.024 | 0.933 | 0.883 | 0.911 | 6.9 | 0.019 |
+| Prominent State-of-the-art Methods | SAM-Mamba | 103.0 | 423.0 | 0.924 | 0.873 | 0.899 | 8.1 | 0.021 | 0.942 | 0.887 | 0.922 | 6.0 | 0.017 |
+| Lightweight Baseline Methods | U-Net | 16.7 | 73.9 | 0.818 | 0.746 | 0.782 | 16.9 | 0.067 | 0.823 | 0.755 | 0.791 | 15.1 | 0.061 |
+| Lightweight Baseline Methods | UNet++ | 9.1 | 65.9 | 0.821 | 0.743 | 0.789 | 16.4 | 0.064 | 0.794 | 0.729 | 0.768 | 15.8 | 0.063 |
+| Lightweight Baseline Methods | PraNet | 30.4 | 13.1 | 0.898 | 0.840 | 0.861 | 11.3 | 0.041 | 0.899 | 0.849 | 0.872 | 9.4 | 0.035 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | U-Net + CRISP | 16.9 | 74.7 | 0.846 | 0.776 | 0.814 | 14.6 | 0.039 | 0.891 | 0.829 | 0.852 | 11.2 | 0.032 |
+|  | Gain over U-Net |  |  | +2.8 | +3.0 | +3.2 | -2.3 | -0.028 | +6.8 | +7.4 | +6.1 | -3.9 | -0.029 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | UNet++ + CRISP | 9.4 | 66.9 | 0.849 | 0.781 | 0.820 | 14.2 | 0.037 | 0.876 | 0.812 | 0.844 | 11.8 | 0.035 |
+|  | Gain over UNet++ |  |  | +2.8 | +3.8 | +3.1 | -2.2 | -0.027 | +8.2 | +8.3 | +7.6 | -4.0 | -0.028 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | PraNet + CRISP | 31.2 | 13.8 | 0.912 | 0.847 | 0.879 | 9.8 | 0.025 | 0.953 | 0.912 | 0.931 | 6.2 | 0.019 |
+|  | Gain over PraNet |  |  | +1.4 | +0.7 | +1.8 | -1.5 | -0.016 | +5.4 | +6.3 | +5.9 | -3.2 | -0.016 |
 
-### Local Mode Environment
+### Cross-dataset robustness on polyp segmentation: unseen-domain results. Means over five seeds.
 
-For the local U-Net workflow, the repository supports a separate TrainDataset/TestDataset
-mode without changing the CRISP math:
+| Group | Method | Params (M) | FLOPs (G) | CVC-300 mDice ↑ | CVC-300 mIoU ↑ | CVC-300 B-F1 ↑ | CVC-300 HD95 ↓ | CVC-300 bECE ↓ | CVC-ColonDB mDice ↑ | CVC-ColonDB mIoU ↑ | CVC-ColonDB B-F1 ↑ | CVC-ColonDB HD95 ↓ | CVC-ColonDB bECE ↓ | ETIS mDice ↑ | ETIS mIoU ↑ | ETIS B-F1 ↑ | ETIS HD95 ↓ | ETIS bECE ↓ |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Prominent State-of-the-art Methods | SANet | 23.8 | 11.3 | 0.888 | 0.815 | 0.843 | 12.7 | 0.036 | 0.753 | 0.670 | 0.714 | 17.8 | 0.058 | 0.750 | 0.654 | 0.707 | 18.6 | 0.062 |
+| Prominent State-of-the-art Methods | MSNet | 27.6 | 17.0 | 0.869 | 0.807 | 0.835 | 13.2 | 0.038 | 0.755 | 0.678 | 0.719 | 17.1 | 0.056 | 0.719 | 0.664 | 0.688 | 19.2 | 0.065 |
+| Prominent State-of-the-art Methods | Polyp-PVT | 25.1 | 10.1 | 0.900 | 0.833 | 0.872 | 11.4 | 0.031 | 0.808 | 0.727 | 0.779 | 14.3 | 0.045 | 0.787 | 0.706 | 0.752 | 15.2 | 0.049 |
+| Prominent State-of-the-art Methods | CTNet | 44.2 | 32.6 | 0.908 | 0.844 | 0.881 | 10.8 | 0.029 | 0.813 | 0.734 | 0.786 | 13.7 | 0.043 | 0.810 | 0.734 | 0.773 | 14.2 | 0.046 |
+| Prominent State-of-the-art Methods | CFA-Net | 25.2 | 55.3 | 0.893 | 0.827 | 0.865 | 11.7 | 0.031 | 0.743 | 0.665 | 0.716 | 17.5 | 0.053 | 0.732 | 0.655 | 0.701 | 18.4 | 0.058 |
+| Prominent State-of-the-art Methods | SAM-Mamba | 103.0 | 423.0 | 0.920 | 0.861 | 0.892 | 9.9 | 0.025 | 0.853 | 0.771 | 0.829 | 11.9 | 0.038 | 0.848 | 0.782 | 0.814 | 11.4 | 0.040 |
+| Lightweight Baseline Methods | U-Net | 16.7 | 73.9 | 0.710 | 0.627 | 0.661 | 21.8 | 0.095 | 0.744 | 0.661 | 0.691 | 18.4 | 0.094 | 0.689 | 0.538 | 0.623 | 23.7 | 0.118 |
+| Lightweight Baseline Methods | UNet++ | 9.1 | 65.9 | 0.707 | 0.624 | 0.668 | 22.1 | 0.091 | 0.731 | 0.648 | 0.684 | 19.2 | 0.090 | 0.704 | 0.556 | 0.636 | 22.4 | 0.110 |
+| Lightweight Baseline Methods | PraNet | 30.4 | 13.1 | 0.871 | 0.797 | 0.834 | 13.0 | 0.051 | 0.779 | 0.704 | 0.728 | 15.8 | 0.079 | 0.727 | 0.571 | 0.671 | 20.4 | 0.101 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | U-Net + CRISP | 16.9 | 74.7 | 0.758 | 0.676 | 0.719 | 17.4 | 0.056 | 0.781 | 0.708 | 0.747 | 14.7 | 0.038 | 0.735 | 0.591 | 0.692 | 18.8 | 0.050 |
+|  | Gain over U-Net |  |  | +4.8 | +4.9 | +5.8 | -4.4 | -0.039 | +3.7 | +4.7 | +5.6 | -3.7 | -0.056 | +4.6 | +5.3 | +6.9 | -4.9 | -0.068 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | UNet++ + CRISP | 9.4 | 66.9 | 0.753 | 0.671 | 0.723 | 17.8 | 0.053 | 0.777 | 0.703 | 0.743 | 15.0 | 0.036 | 0.748 | 0.603 | 0.703 | 17.9 | 0.048 |
+|  | Gain over UNet++ |  |  | +4.6 | +4.7 | +5.5 | -4.3 | -0.038 | +4.6 | +5.5 | +5.9 | -4.2 | -0.054 | +4.4 | +4.7 | +6.7 | -4.5 | -0.062 |
+| Lightweight Baselines Enhanced with CRISP (Ours) | PraNet + CRISP | 31.2 | 13.8 | 0.900 | 0.830 | 0.871 | 10.9 | 0.031 | 0.812 | 0.733 | 0.772 | 12.9 | 0.031 | 0.768 | 0.626 | 0.724 | 16.1 | 0.043 |
+|  | Gain over PraNet |  |  | +2.9 | +3.3 | +3.7 | -2.1 | -0.020 | +3.3 | +2.9 | +4.4 | -2.9 | -0.048 | +4.1 | +5.5 | +5.3 | -4.3 | -0.058 |
 
-```bash
-export CRISP_LOCAL_WORKSPACE_ROOT=/path/to/repo_root
-export CRISP_LOCAL_DATA_ROOT=/path/to/repo_root/data
-# The loader also accepts /path/to/repo_root as the local data root.
+Full experiment notes are provided in [docs/experiments.md](docs/experiments.md).
 
-export CRISP_LOCAL_VAL_FRACTION=0.1
-export CRISP_AUTO_DOWNLOAD_WEIGHTS=false
+## Installation
 
-export CRISP_LOCAL_UNET_TEACHER_PRANET_CKPT=checkpoints/teachers/pranet/pranet_teacher.pt
-export CRISP_LOCAL_UNET_TEACHER_POLYP_PVT_CKPT=checkpoints/teachers/polyp_pvt/polyp_pvt_teacher.pt
-export CRISP_LOCAL_UNET_TEACHER_UACANET_CKPT=checkpoints/teachers/uacanet/uacanet_l_teacher.pt
-
-export CRISP_LOCAL_UNET_TEACHER_PRANET_URL=
-export CRISP_LOCAL_UNET_TEACHER_POLYP_PVT_URL=
-export CRISP_LOCAL_UNET_TEACHER_UACANET_URL=
-
-export CRISP_LOCAL_UNET_BASELINE_INIT_CKPT=
-export CRISP_LOCAL_UNET_BASELINE_INIT_URL=
-export CRISP_LOCAL_UNET_CRISP_INIT_CKPT=
-export CRISP_LOCAL_UNET_CRISP_INIT_URL=
-
-# Optional third teacher:
-export CRISP_LOCAL_ENABLE_UACANET_TEACHER=false
-export CRISP_LOCAL_UNET_TEACHER_UACANET_CLASS=package.module.UACANetL
-```
-
-### Data Root Layout
-
-`CRISP_DATA_ROOT` should contain:
-
-```text
-$CRISP_DATA_ROOT/
-├── Kvasir-SEG/
-│   ├── images/
-│   ├── masks/
-│   └── splits/
-│       ├── train.txt
-│       └── val.txt
-├── ColonDB/
-│   ├── images/
-│   └── masks/
-├── ETIS-LaribPolypDB/
-│   ├── images/
-│   └── masks/
-└── PolypGen/
-    ├── images/
-    ├── masks/
-    └── splits/
-        └── test.txt
-```
-
-### Local Mode Layout
-
-The local U-Net mode accepts either:
-
-- `repo_root/TrainDataset` and `repo_root/TestDataset`
-- `repo_root/data/TrainDataset` and `repo_root/data/TestDataset`
-
-with the following structure:
-
-```text
-<local_data_root>/
-├── TrainDataset/
-│   ├── image/   or images/
-│   └── mask/    or masks/
-└── TestDataset/
-    ├── CVC-300/
-    │   ├── image/ or images/
-    │   └── mask/  or masks/
-    ├── CVC-ClinicDB/
-    ├── CVC-ColonDB/
-    ├── ETIS-LaribPolypDB/
-    └── Kvasir/
-```
-
-Local-mode behavior:
-
-- Train on the entire `TrainDataset`.
-- Build a deterministic train/val split from `TrainDataset` and cache it under `metadata/splits/`.
-- Auto-discover immediate child datasets under `TestDataset/*` for evaluation unless `eval_datasets` is overridden.
-- Preserve CRISP inference invariants: no teachers, no local solver, projector-off means `alpha_hat = 1`.
-
-### Local Smoke Test
-
-Bootstrap the local workspace first:
-
-```bash
-bash scripts/bootstrap_local_workspace.sh
-```
-
-For a quick CPU smoke test on macOS or laptop hardware, prefer small overrides:
-
-```bash
-bash scripts/train_unet_baseline_local.sh \
-  training.epochs=1 \
-  training.batch_size=2 \
-  training.mixed_precision=false \
-  source_data.num_workers=0 \
-  source_data.pin_memory=false \
-  model.base_channels=8
-```
-
-This run now logs `Starting training...` and `Starting epoch ...` immediately, so an initially quiet terminal is no longer ambiguous.
-
-To smoke-test local CRISP without waiting for a full baseline run:
-
-```bash
-unset CRISP_LOCAL_UNET_CRISP_INIT_CKPT
-
-bash scripts/train_unet_crisp_local.sh \
-  training.epochs=1 \
-  training.batch_size=2 \
-  training.mixed_precision=false \
-  source_data.num_workers=0 \
-  source_data.pin_memory=false \
-  model.base_channels=8
-```
-
-If `CRISP_LOCAL_UNET_CRISP_INIT_CKPT` points to a missing baseline checkpoint, `scripts/train_unet_crisp_local.sh` falls back to `checkpoints/students/unet/init/unet_init.pt` and loads it in non-strict mode for smoke testing only.
-
-For a true baseline-initialized CRISP run, let the baseline finish at least one epoch and then point CRISP to the produced checkpoint, for example:
-
-```bash
-export CRISP_LOCAL_UNET_CRISP_INIT_CKPT=/path/to/repo_root/checkpoints/students/unet/baseline/seed_0/epoch_1.pt
-```
-
-For baseline evaluation, pass the config explicitly because `scripts/eval_unet_local.sh` defaults to `experiment/task_local_unet_crisp`:
-
-```bash
-bash scripts/eval_unet_local.sh \
-  /path/to/repo_root/checkpoints/students/unet/baseline/seed_0/epoch_1.pt \
-  experiment/task_local_unet_baseline \
-  eval.batch_size=1 \
-  source_data.num_workers=0 \
-  source_data.pin_memory=false
-```
-
-## Quick Start
+Create the Conda environment:
 
 ```bash
 conda env create -f environment.yml
 conda activate crisp-replication
 pip install -e .
-bash scripts/train_pranet_crisp.sh
-bash scripts/eval_pranet_crossdomain.sh /path/to/checkpoint.pt
-bash scripts/train_unet_baseline.sh
-bash scripts/train_unet_crisp.sh
-bash scripts/eval_unet_crossdomain.sh /path/to/checkpoint.pt
-bash scripts/bootstrap_local_workspace.sh
-bash scripts/train_unet_baseline_local.sh
-bash scripts/train_unet_crisp_local.sh
-bash scripts/eval_unet_local.sh /path/to/checkpoint.pt experiment/task_local_unet_baseline
-bash scripts/eval_unet_local.sh /path/to/checkpoint.pt experiment/task_local_unet_crisp
-bash scripts/export_tables.sh
 ```
 
-## Paper-Faithful Now
-
-- Task A / PraNet core path preserves CRISP as amortized boundary posterior projection, not generic soft-label learning or generic spatial temperature scaling.
-- Task A / U-Net baseline and U-Net + CRISP paths are now first-class local run targets with explicit host configs and smoke coverage.
-- Training keeps explicit detached `alpha_star`, a stabilized inner solver used only for supervision, and raw student logits `z` in the forward path.
-- The projector predicts bounded per-pixel inverse temperatures in `[alpha_min, alpha_max]` and inference uses `p_tilde = sigmoid(alpha_hat * z)`.
-- Boundary-posterior targets use the frozen teacher barycenter and soft Gaussian boundary weighting field.
-- Evaluation exports projector-on and projector-off results, including Dice, Boundary-F1, HD95, ECE, bECE, BA-ECE, TACE, Brier, and NLL.
-- Post-hoc calibrators are fit on source validation only.
-- Paper-faithful experiment configs now require source validation and fail loudly when teacher checkpoints or requested target datasets are missing.
-- U-Net teacher pools are config-driven, with a practical two-teacher default and an optional third external teacher slot.
-- Local U-Net mode now supports `TrainDataset`/`TestDataset` workflows with deterministic split caching, auto-discovered test datasets, local checkpoint workspace bootstrapping, and optional checkpoint auto-download.
-
-## Partial
-
-- The CRISP method path is faithful for Task A / PraNet, but exact paper-number reproduction still depends on using the official host architectures and checkpoints.
-- The U-Net milestone is ready for local smoke tests and Task A training/evaluation wiring, but exact cross-repo teacher reproduction still depends on external checkpoints.
-- Local mode is ready for TrainDataset/TestDataset workflows, but the exact teacher quality and optional third-teacher integration still depend on external weights and, for UACANet-L, an external implementation.
-- `src/crisp/models/pranet.py` is a clean CRISP-compatible PraNet-style wrapper, not the original official Res2Net PraNet implementation.
-- `src/crisp/models/polyp_pvt.py` and `src/crisp/models/rabbit.py` are lightweight compatible wrappers for teacher/host interfacing, not official paper backbones.
-- `src/crisp/scripts/benchmark.py` is a lightweight local benchmark utility, not a full paper-accurate compute reproduction pipeline.
-
-## Not Yet Implemented
-
-- Bundled official teacher checkpoints and exact upstream host-model weights.
-- A repo-local UACANet-L wrapper. The optional third teacher slot currently expects an importable external class path.
-- Final repository license text in `LICENSE`.
-
-## Local Verification
-
-The current local smoke path has been exercised with:
+Alternatively, install into an existing Python 3.10 environment:
 
 ```bash
-conda run -n crisp-replication python -m pytest tests -q
-conda run -n crisp-replication python -m crisp.scripts.train --config-path /abs/path/to/configs --config-name experiment/taskA_pranet_crisp --cfg job
-conda run -n crisp-replication bash scripts/train_pranet_crisp.sh --cfg job
-conda run -n crisp-replication python -m crisp.scripts.train --config-path /abs/path/to/configs --config-name experiment/taskA_unet_crisp --cfg job
-conda run -n crisp-replication python -m crisp.scripts.evaluate --config-path /abs/path/to/configs --config-name experiment/taskA_unet_crisp --cfg job +checkpoint=/tmp/fake.pt
-conda run -n crisp-replication bash scripts/bootstrap_local_workspace.sh
-conda run -n crisp-replication python -m crisp.scripts.train --config-path /abs/path/to/configs --config-name experiment/task_local_unet_baseline --cfg job
-conda run -n crisp-replication python -m crisp.scripts.evaluate --config-path /abs/path/to/configs --config-name experiment/task_local_unet_crisp --cfg job +checkpoint=/tmp/fake.pt
+pip install -r requirements.txt
+pip install -e .
 ```
 
-See [`docs/audit_report.md`](/Users/minhnguyen/Desktop/CRISP_MIDL/docs/audit_report.md) for the structured audit status.
-See [`docs/unet_taskA_report.md`](/Users/minhnguyen/Desktop/CRISP_MIDL/docs/unet_taskA_report.md) for the U-Net milestone report.
-See [`docs/local_mode_report.md`](/Users/minhnguyen/Desktop/CRISP_MIDL/docs/local_mode_report.md) for the TrainDataset/TestDataset local-mode report.
+## Dataset Setup
+
+Testing dataset: [download link (Google Drive)](https://drive.google.com/file/d/1o8OfBvYE6K-EpDyvzsmMPndnUMwb540R/view).
+
+Training dataset: [download link (Google Drive)](https://drive.google.com/file/d/1lODorfB33jbd-im-qrtUgWnZXxB94F55/view).
+
+Place the extracted files under `data/`:
+
+```text
+data/
+├── TrainDataset/
+│   ├── image/
+│   └── mask/
+└── TestDataset/
+    ├── Kvasir/
+    │   ├── image/
+    │   └── mask/
+    ├── CVC-ClinicDB/
+    │   ├── image/
+    │   └── mask/
+    ├── CVC-300/
+    │   ├── image/
+    │   └── mask/
+    ├── CVC-ColonDB/
+    │   ├── image/
+    │   └── mask/
+    └── ETIS-LaribPolypDB/
+        ├── image/
+        └── mask/
+```
+
+The loader also accepts `images/` and `masks/` folder names. Training reads all matched pairs under `TrainDataset` and creates a deterministic validation split with `val_fraction=0.1` by default. Evaluation auto-discovers valid child datasets under `TestDataset`.
+
+Verify the local data tree:
+
+```bash
+bash scripts/verify_data.sh --root ./data --non-strict
+```
+
+## Checkpoint Setup
+
+Model weights are not committed to the repository. Put checkpoints in local paths or provide them through environment variables:
+
+```bash
+export CRISP_TEACHER_UACANET_L_CKPT=/path/to/uacanet_l_checkpoint.pth
+export CRISP_TEACHER_POLYP_PVT_CKPT=/path/to/polyp_pvt_checkpoint.pth
+```
+
+Polyp-PVT also expects the upstream PVT-v2 B2 backbone pretrain file at:
+
+```text
+1_baseline/Polyp-PVT/pretrained_pth/pvt_v2_b2.pth
+```
+
+Student initialization checkpoints can be supplied with Hydra overrides:
+
+```bash
+student_init.checkpoint=/path/to/student_checkpoint.pt
+student_init.strict=true
+```
+
+## Training
+
+Train the retained thesis students:
+
+```bash
+bash scripts/train_thesis_unet_baseline.sh
+bash scripts/train_thesis_unet_crisp.sh
+
+bash scripts/train_thesis_unetpp_baseline.sh
+bash scripts/train_thesis_unetpp_crisp.sh
+
+bash scripts/train_thesis_pranet_baseline.sh
+bash scripts/train_thesis_pranet_crisp.sh
+```
+
+Hydra overrides can be appended to any script:
+
+```bash
+bash scripts/train_thesis_unet_crisp.sh \
+  training.batch_size=8 \
+  training.mixed_precision=true \
+  source_data.num_workers=4
+```
+
+## Evaluation
+
+Evaluate trained checkpoints:
+
+```bash
+bash scripts/eval_thesis_unet.sh /path/to/checkpoint.pt
+bash scripts/eval_thesis_unetpp.sh /path/to/checkpoint.pt
+bash scripts/eval_thesis_pranet.sh /path/to/checkpoint.pt
+```
+
+For CRISP checkpoints, evaluation exports both projector-on and projector-off metrics. For baseline checkpoints, the scripts select the matching baseline configuration when the checkpoint path contains `baseline`; otherwise set `CRISP_EVAL_CONFIG` explicitly.
+
+## Metrics
+
+The evaluator exports:
+
+- `mDice`
+- `mIoU`
+- `B-F1` / `boundary_f1`
+- `HD95`
+- `bECE`
+- `off-bECE`
+- optional `ECE`, `BA-ECE`, `TACE`, `Brier`, and `NLL`
+
+Checkpoint selection prioritizes validation `boundary_f1`, breaks ties by lower validation `bECE`, and then by Dice.
+
+## Repository Structure
+
+```text
+configs/              Hydra experiment, model, data, teacher, and metric configs
+scripts/              Training, evaluation, data verification, and export scripts
+src/crisp/            CRISP package source
+src/crisp/data/       Dataset discovery, pairing, and image/mask transforms
+src/crisp/engine/     Training, checkpointing, and evaluation loops
+src/crisp/metrics/    Segmentation and calibration metrics
+src/crisp/models/     Student/teacher adapters and projector head
+src/crisp/modules/    Boundary, posterior, solver, calibration, and losses
+tests/                Unit, adapter, loader, CLI, and invariant tests
+docs/                 Public method, dataset, and experiment notes
+1_baseline/           Minimal baseline source needed for checkpoint compatibility
+```
+
+Large local artifacts such as datasets, checkpoints, logs, outputs, notebooks, figures, and model weights are intentionally not tracked.
+
+## Documentation
+
+- [Method notes](docs/method.md)
+- [Dataset setup](docs/datasets.md)
+- [Experiment protocol and full tables](docs/experiments.md)
+
+## Citation / License
+
+If you use this code, cite the associated CRISP thesis or paper when available.
+
+This repository is released under the license in [LICENSE](LICENSE). Third-party baseline source files retain their upstream notices and licenses where included.
