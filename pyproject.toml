@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "crisp-replication"
+name = "crisp-polyp-seg"
 version = "0.1.0"
 description = "Research codebase for CRISP boundary-posterior projection"
 readme = "README.md"

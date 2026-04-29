@@ -78,7 +78,7 @@ Create the Conda environment:
 
 ```bash
 conda env create -f environment.yml
-conda activate crisp-replication
+conda activate crisp
 pip install -e .
 ```
 

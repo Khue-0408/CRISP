@@ -1,4 +1,4 @@
-name: crisp-replication
+name: crisp
 channels:
   - pytorch
   - conda-forge
