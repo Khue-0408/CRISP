@@ -128,7 +128,20 @@ Verify the local data tree:
 bash scripts/verify_data.sh --root ./data --non-strict
 ```
 
-## Checkpoint Setup
+## Model Weights
+
+Pretrained and experiment checkpoints can be downloaded from: [download link (Google Drive)](https://drive.google.com/drive/folders/1pTjVGKuJmxK1aGacp7O_WnsbtfngoI2Q?usp=drive_link).
+
+The folder includes ready checkpoints for the retained students and CRISP variants:
+
+- U-Net baseline
+- U-Net + CRISP
+- UNet++ baseline
+- UNet++ + CRISP
+- PraNet baseline
+- PraNet + CRISP
+
+Teacher checkpoints for UACANet-L and Polyp-PVT are also provided. Place the checkpoints under the paths expected by the configs or provide paths through environment variables. For CRISP checkpoints, both the student and projector states are stored.
 
 Model weights are not committed to the repository. Put checkpoints in local paths or provide them through environment variables:
 
