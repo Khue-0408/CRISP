@@ -215,6 +215,37 @@ def test_active_crisp_adds_same_side_loss_without_changing_final_projection(
     assert projector.conv1.weight.grad is not None
 
 
+def test_pranet_matched_beta0_preserves_native_side_loss(controlled_batch) -> None:
+    torch.manual_seed(31)
+    model = _TinyPraNet()
+    projector = CRISPProjectorHead(4)
+    full_config = _config(True)
+    beta0_config = _config(True)
+    beta0_config["crisp"]["projection"]["beta"] = 0.0
+    full = Trainer(model, projector, None, full_config)
+    matched = Trainer(model, projector, None, beta0_config)
+
+    full_step = full.train_one_step(controlled_batch, epoch=1, step=0)
+    beta0_step = matched.train_one_step(controlled_batch, epoch=1, step=0)
+
+    assert full.use_amortization_loss and matched.use_amortization_loss
+    assert full_step.logs["native_aux_loss"] == pytest.approx(beta0_step.logs["native_aux_loss"])
+    assert full_step.logs["task_loss"] == pytest.approx(beta0_step.logs["task_loss"])
+    assert full_step.logs["amort_loss"] == pytest.approx(beta0_step.logs["amort_loss"])
+    torch.testing.assert_close(
+        full_step.loss - beta0_step.loss,
+        0.35 * torch.as_tensor(beta0_step.logs["amort_loss"]),
+    )
+    assert beta0_step.logs["loss"] == pytest.approx(
+        beta0_step.logs["final_loss"] + beta0_step.logs["native_aux_loss"]
+    )
+    beta0_step.loss.backward()
+    assert projector.conv1.weight.grad is not None
+    assert projector.conv1.weight.grad.abs().sum() > 0
+    assert model.side5.weight.grad is not None
+    assert model.side5.weight.grad.abs().sum() > 0
+
+
 def test_non_pranet_host_does_not_inherit_native_side_loss(controlled_batch) -> None:
     model = _OtherHost()
     trainer = Trainer(model, None, None, _config(False))
