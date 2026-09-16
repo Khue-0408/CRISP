@@ -17,8 +17,6 @@ from typing import Dict, Optional
 import torch
 import torch.nn.functional as F
 
-from crisp.modules.solver import stabilize_logits_for_solver
-
 
 def dice_loss(
     probs: torch.Tensor,
@@ -219,21 +217,24 @@ def crisp_amortization_loss(
 
     CRISP reference
     ---------------
-    instruct.md §12:
+    Neurocomputing manuscript, Eqs. (17)-(18):
       L_amort = mean_u [ ρ(u) (α̂(u) - sg[α*(u)])² ]
-      ρ(u) = w_b(u) · 1{|z̄(u)| ≥ ζ}
-    instruct.md §12.1:
-      ρ = wb · (|z̃| >= ζ).float()
+      ρ(u) = w_b(u) · 1{|z_clip(u)| ≥ ζ}
     """
     if alpha_hat.shape != alpha_star.shape:
         raise ValueError("alpha_hat and alpha_star must have matching shapes.")
     if alpha_star.requires_grad:
         raise ValueError("alpha_star must be detached before amortization supervision.")
 
-    # Confidence mask: suppress near-zero-logit regions using the stabilized
-    # detached solver logits z̃ (instruct.md §8, §12.1).
-    z_tilde = stabilize_logits_for_solver(logits, zmax=zmax, zeta=zeta)
-    confident = (z_tilde.abs() >= zeta).float()  # [B,1,H,W]
+    if zmax <= 0:
+        raise ValueError(f"zmax must be positive, got {zmax}.")
+    if zeta <= 0:
+        raise ValueError(f"zeta must be positive, got {zeta}.")
+
+    # Solver stabilization floors |z_tilde| to zeta; identifiability support
+    # must instead use the detached logit after clipping, before that floor.
+    z_clip = logits.detach().clamp(-zmax, zmax)
+    confident = (z_clip.abs() >= zeta).to(boundary_weight.dtype)  # [B,1,H,W]
     rho = boundary_weight * confident  # [B,1,H,W]
 
     # Amortization MSE with stop-gradient on alpha_star.

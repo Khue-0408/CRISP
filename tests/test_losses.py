@@ -2,6 +2,7 @@
 Unit tests for baseline and CRISP losses.
 """
 
+import pytest
 import torch
 from crisp.modules.losses import (
     baseline_bce_dice_loss,
@@ -54,15 +55,94 @@ def test_crisp_task_loss_keys() -> None:
 
 
 def test_crisp_amort_loss_detach() -> None:
-    """Amortization loss should not backprop through alpha_star."""
-    alpha_hat = torch.randn(1, 1, 8, 8, requires_grad=True)
-    alpha_star = torch.randn(1, 1, 8, 8)  # no grad
-    wb = torch.rand(1, 1, 8, 8)
-    logits = torch.randn(1, 1, 8, 8)
+    """Only the projector prediction receives amortization gradients."""
+    alpha_hat = torch.tensor([[[[2.0]]]], requires_grad=True)
+    alpha_star_source = torch.tensor([[[[1.0]]]], requires_grad=True)
+    logits = torch.tensor([[[[0.25]]]], requires_grad=True)
+
+    d = crisp_amortization_loss(
+        alpha_hat, alpha_star_source.detach(), torch.ones_like(logits), logits, zeta=0.10
+    )
+    d["amort_loss"].backward()
+    assert torch.allclose(alpha_hat.grad, torch.tensor([[[[2.0]]]]))
+    assert alpha_star_source.grad is None
+    assert logits.grad is None
+
+
+def test_crisp_amort_loss_rejects_gradient_bearing_target() -> None:
+    alpha_hat = torch.tensor([[[[2.0]]]])
+    alpha_star = torch.tensor([[[[1.0]]]], requires_grad=True)
+    wb = torch.ones_like(alpha_hat)
+    logits = torch.tensor([[[[0.25]]]])
+
+    with pytest.raises(ValueError, match="alpha_star must be detached"):
+        crisp_amortization_loss(alpha_hat, alpha_star, wb, logits, zeta=0.10)
+
+
+def test_crisp_amort_loss_excludes_near_zero_logits() -> None:
+    logits = torch.tensor([[[[-0.099, 0.0, 0.099]]]])
+    alpha_hat = torch.full_like(logits, 2.0)
+    alpha_star = torch.ones_like(logits)
+    wb = torch.tensor([[[[1.0, 0.5, 0.25]]]])
 
     d = crisp_amortization_loss(alpha_hat, alpha_star, wb, logits, zeta=0.10)
-    d["amort_loss"].backward()
-    assert alpha_hat.grad is not None, "alpha_hat should receive gradients"
+    assert d["amort_loss"].item() == 0.0
+    assert d["confident_coverage"].item() == 0.0
+    assert d["rho_coverage"].item() == 0.0
+
+
+def test_crisp_amort_loss_includes_exact_zeta_on_both_sides() -> None:
+    logits = torch.tensor([[[[-0.10, 0.10]]]])
+    d = crisp_amortization_loss(
+        torch.full_like(logits, 2.0), torch.ones_like(logits),
+        torch.ones_like(logits), logits, zeta=0.10,
+    )
+    assert torch.allclose(d["amort_loss"], torch.tensor(1.0))
+    assert d["confident_coverage"].item() == 1.0
+
+
+def test_crisp_amort_loss_includes_above_zeta_on_both_sides() -> None:
+    logits = torch.tensor([[[[-0.25, 0.25]]]])
+    d = crisp_amortization_loss(
+        torch.full_like(logits, 2.0), torch.ones_like(logits),
+        torch.ones_like(logits), logits, zeta=0.10,
+    )
+    assert torch.allclose(d["amort_loss"], torch.tensor(1.0))
+    assert d["confident_coverage"].item() == 1.0
+
+
+def test_crisp_amort_loss_multiplies_boundary_weights() -> None:
+    logits = torch.tensor([[[[0.25, 0.25, 0.25]]]])
+    wb = torch.tensor([[[[1.0, 0.5, 0.0]]]])
+    d = crisp_amortization_loss(
+        torch.full_like(logits, 2.0), torch.ones_like(logits), wb, logits, zeta=0.10,
+    )
+    assert torch.allclose(d["amort_loss"], torch.tensor(0.5))
+    assert torch.allclose(d["rho_coverage"], torch.tensor(0.5))
+
+
+def test_crisp_amort_loss_mixed_manual_value() -> None:
+    logits = torch.tensor([[[[0.0, 0.10, -0.25]]]])
+    alpha_hat = torch.tensor([[[[2.0, 3.0, 4.0]]]])
+    alpha_star = torch.ones_like(logits)
+    wb = torch.tensor([[[[1.0, 0.5, 0.25]]]])
+
+    d = crisp_amortization_loss(alpha_hat, alpha_star, wb, logits, zeta=0.10)
+    # Full-domain mean of [0, 0.5 * 2^2, 0.25 * 3^2].
+    assert torch.allclose(d["amort_loss"], torch.tensor(4.25 / 3.0))
+    assert torch.allclose(d["confident_coverage"], torch.tensor(2.0 / 3.0))
+    assert torch.allclose(d["rho_coverage"], torch.tensor(0.25))
+
+
+def test_crisp_amort_loss_clips_logits_before_support() -> None:
+    logits = torch.tensor([[[[-9.0, 9.0, 0.0]]]])
+    d = crisp_amortization_loss(
+        torch.full_like(logits, 2.0), torch.ones_like(logits),
+        torch.ones_like(logits), logits, zeta=0.30, zmax=0.20,
+    )
+    assert d["amort_loss"].item() == 0.0
+    assert d["confident_coverage"].item() == 0.0
+    assert d["rho_coverage"].item() == 0.0
 
 
 def test_crisp_amort_loss_matches_global_mean_objective() -> None:
