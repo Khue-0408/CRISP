@@ -295,6 +295,7 @@ def solve_alpha_star(
     newton_no_decrease_count = torch.zeros_like(alpha)
     newton_accepted_count = torch.zeros_like(alpha)
     newton_fallback_count = torch.zeros_like(alpha)
+    bisection_count = torch.zeros_like(alpha, dtype=torch.int32)
     used_bisection = torch.zeros_like(interior)
 
     # --- Step 3: Safeguarded Newton attempts, bisecting rejected proposals. ---
@@ -310,7 +311,8 @@ def solve_alpha_star(
             alpha, lo, hi, z_tilde, clipped_target, boundary_weight,
             lambda_value, mu_value, active,
         )
-        fallback = active & ~accepted
+        fallback = active & ~accepted & (bisection_count < bisection_steps)
+        candidate = torch.where(accepted | fallback, candidate, alpha)
         g_candidate = projection_gradient(
             candidate, z_tilde, clipped_target, boundary_weight,
             lambda_value, mu_value,
@@ -320,10 +322,12 @@ def solve_alpha_star(
         newton_no_decrease_count += no_decrease.float()
         newton_accepted_count += accepted.float()
         newton_fallback_count += fallback.float()
+        bisection_count += fallback.to(bisection_count.dtype)
         used_bisection |= fallback
-        lo = torch.where(active & (g_candidate < 0), candidate, lo)
-        hi = torch.where(active & (g_candidate > 0), candidate, hi)
-        alpha = torch.where(active, candidate, alpha)
+        updated = accepted | fallback
+        lo = torch.where(updated & (g_candidate < 0), candidate, lo)
+        hi = torch.where(updated & (g_candidate > 0), candidate, hi)
+        alpha = torch.where(updated, candidate, alpha)
 
     # --- Step 4: At most bisection_steps further bracket refinements. ---
     for _ in range(bisection_steps):
@@ -333,7 +337,10 @@ def solve_alpha_star(
         )
         # Once Newton has fallen back, finish bracket refinement even if a
         # small derivative masks a wider alpha error under low curvature.
-        active = interior & ((g_current.abs() > residual_tol) | (used_bisection & (g_current != 0)))
+        active = (
+            interior & (bisection_count < bisection_steps)
+            & ((g_current.abs() > residual_tol) | (used_bisection & (g_current != 0)))
+        )
         if not active.any():
             break
         mid = 0.5 * (lo + hi)
@@ -344,6 +351,7 @@ def solve_alpha_star(
         lo = torch.where(active & (g_mid < 0), mid, lo)
         hi = torch.where(active & (g_mid > 0), mid, hi)
         alpha = torch.where(active, mid, alpha)
+        bisection_count += active.to(bisection_count.dtype)
         used_bisection |= active
 
     # --- Step 5: Final clamp and detach ---
@@ -359,7 +367,9 @@ def solve_alpha_star(
         "newton_outside_bracket": newton_outside_count.sum(),
         "newton_no_residual_decrease": newton_no_decrease_count.sum(),
         "newton_accepted": newton_accepted_count.sum(),
+        "newton_accepted_max": newton_accepted_count.max(),
         "newton_fallback": newton_fallback_count.sum(),
+        "bisection_updates_max": bisection_count.max(),
         "bisection_pixels": used_bisection.float().mean(),
         "bracket_rate": interior.float().mean(),
     }

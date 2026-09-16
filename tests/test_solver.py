@@ -249,3 +249,72 @@ def test_production_solver_records_bisection_fallback() -> None:
     residual = projection_gradient(result, z, target, wb, 0.0, 0.001)
     assert residual.abs().item() < 1e-4
     assert abs(result.item() - _reference_root(-6.0, 1e-5, 0.0, 0.001)) < 5e-4
+
+
+def test_newton_fallback_consumes_the_only_bisection_update() -> None:
+    z = torch.tensor([[[[-6.0]]]])
+    target = torch.tensor([[[[1e-5]]]])
+    wb = torch.zeros_like(z)
+    result, diag = solve_alpha_star(
+        z, target, wb, 0.0, 0.001, 0.5, 1.75, 8.0, 0.10,
+        newton_steps=3, bisection_steps=1,
+    )
+    assert diag["newton_fallback"].item() == 1.0
+    assert diag["bisection_updates_max"].item() == 1
+    assert diag["bisection_pixels"].item() == 1.0
+    assert diag["newton_accepted_max"].item() <= 3
+    assert 0.5 <= result.item() <= 1.75
+
+
+def test_canonical_bisection_budget_and_reference_accuracy() -> None:
+    z = torch.tensor([[[[-6.0]]]])
+    target = torch.tensor([[[[1e-5]]]])
+    wb = torch.zeros_like(z)
+    result, diag = solve_alpha_star(
+        z, target, wb, 0.0, 0.001, 0.5, 1.75, 8.0, 0.10,
+        newton_steps=3, bisection_steps=12,
+    )
+    assert diag["newton_fallback"].item() >= 1.0
+    assert 1 <= diag["bisection_updates_max"].item() <= 12
+    assert diag["newton_accepted_max"].item() <= 3
+    assert 0.5 <= result.item() <= 1.75
+    residual = projection_gradient(result, z, target, wb, 0.0, 0.001)
+    assert residual.abs().item() < 1e-4
+    assert abs(result.item() - _reference_root(-6.0, 1e-5, 0.0, 0.001)) < 5e-4
+
+
+def test_bisection_budget_is_independent_per_pixel() -> None:
+    z = torch.tensor([[[[-6.0, 4.0]]]])
+    target = torch.tensor([[[[1e-5, 0.999]]]])
+    wb = torch.zeros_like(z)
+    result, diag = solve_alpha_star(
+        z, target, wb, 1.0, 0.001, 0.5, 1.75, 8.0, 0.10,
+        newton_steps=1, bisection_steps=1,
+    )
+    separate = torch.cat([
+        solve_alpha_star(
+            z[..., i:i + 1], target[..., i:i + 1], wb[..., i:i + 1],
+            1.0, 0.001, 0.5, 1.75, 8.0, 0.10,
+            newton_steps=1, bisection_steps=1,
+        )[0]
+        for i in range(2)
+    ], dim=-1)
+    assert torch.equal(result, separate)
+    assert diag["newton_fallback"].item() == 1.0
+    assert diag["newton_accepted"].item() == 1.0
+    assert diag["bisection_updates_max"].item() == 1
+    assert diag["bisection_pixels"].item() == 1.0
+
+
+def test_zero_bisection_budget_keeps_rejected_iterate() -> None:
+    z = torch.tensor([[[[-6.0]]]])
+    target = torch.tensor([[[[1e-5]]]])
+    wb = torch.zeros_like(z)
+    result, diag = solve_alpha_star(
+        z, target, wb, 0.0, 0.001, 0.5, 1.75, 8.0, 0.10,
+        newton_steps=3, bisection_steps=0,
+    )
+    assert diag["newton_no_residual_decrease"].item() >= 1.0
+    assert diag["newton_fallback"].item() == 0.0
+    assert diag["bisection_updates_max"].item() == 0
+    assert 0.5 <= result.item() <= 1.75
