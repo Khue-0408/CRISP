@@ -67,7 +67,7 @@ def iou_score(
 def boundary_f1_score(
     pred_mask: torch.Tensor,
     true_mask: torch.Tensor,
-    tolerance: int = 2,
+    tolerance: int = 5,
 ) -> torch.Tensor:
     """
     Compute Boundary-F1 score.
@@ -79,7 +79,7 @@ def boundary_f1_score(
     true_mask:
         Binary ground-truth mask, same spatial shape.
     tolerance:
-        Pixel tolerance for matching boundary points.
+        Euclidean pixel tolerance for matching boundary points (5 at 352x352).
 
     Returns
     -------
@@ -114,17 +114,17 @@ def boundary_f1_score(
     dist_pred_to_true = distance_transform_edt(1.0 - true_boundary)
     dist_true_to_pred = distance_transform_edt(1.0 - pred_boundary)
 
-    # Count matches within tolerance.
-    pred_matched = ((dist_pred_to_true * pred_boundary) <= tolerance).sum()
-    true_matched = ((dist_true_to_pred * true_boundary) <= tolerance).sum()
+    # Only boundary pixels can be matches; non-boundary pixels are not in either denominator.
+    pred_matched = (dist_pred_to_true[pred_boundary.astype(bool)] <= tolerance).sum()
+    true_matched = (dist_true_to_pred[true_boundary.astype(bool)] <= tolerance).sum()
 
-    precision = pred_matched / max(pred_boundary.sum(), 1)
-    recall = true_matched / max(true_boundary.sum(), 1)
+    precision = pred_matched / pred_boundary.sum()
+    recall = true_matched / true_boundary.sum()
 
     if precision + recall < 1e-10:
         return torch.tensor(0.0)
 
-    f1 = 2.0 * precision * recall / (precision + recall)
+    f1 = 2.0 * precision * recall / (precision + recall + np.finfo(np.float64).eps)
     return torch.tensor(float(f1))
 
 
