@@ -12,8 +12,6 @@ CRISP reference: instruct.md §10.
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -98,7 +96,6 @@ class CRISPProjectorHead(nn.Module):
         self,
         features: torch.Tensor,
         logits: torch.Tensor,
-        output_size: Tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """
         Predict the bounded inverse-temperature field alpha_hat.
@@ -109,9 +106,6 @@ class CRISPProjectorHead(nn.Module):
             Decoder-aligned features of shape [B, C, Hf, Wf].
         logits:
             Raw foreground logits of shape [B, 1, H, W].
-        output_size:
-            Optional target spatial size (H, W) for upsampling alpha_hat.
-            If None, uses the spatial size of *logits*.
 
         Returns
         -------
@@ -119,8 +113,12 @@ class CRISPProjectorHead(nn.Module):
             Predicted inverse-temperature field of shape [B, 1, H, W]
             with values constrained to [alpha_min, alpha_max].
         """
-        if output_size is None:
-            output_size = (logits.shape[2], logits.shape[3])
+        if features.ndim != 4 or logits.ndim != 4:
+            raise ValueError("Projector features and logits must both be 4D tensors.")
+        if logits.shape[1] != 1:
+            raise ValueError("Projector logits must have exactly one foreground channel.")
+        if features.shape[0] != logits.shape[0]:
+            raise ValueError("Projector features and logits must have the same batch size.")
 
         # Step 1: Align raw logits to the supplied feature resolution.
         feat_size = (features.shape[2], features.shape[3])
@@ -141,7 +139,7 @@ class CRISPProjectorHead(nn.Module):
         # Step 5: Map the feature-grid score to bounded alpha, then upsample alpha.
         alpha_low = self.alpha_min + (self.alpha_max - self.alpha_min) * torch.sigmoid(score)
         alpha_hat = F.interpolate(
-            alpha_low, size=output_size, mode="bilinear", align_corners=False
+            alpha_low, size=logits.shape[-2:], mode="bilinear", align_corners=False
         )  # [B, 1, H, W]
         if (alpha_hat < self.alpha_min - 1e-6).any() or (alpha_hat > self.alpha_max + 1e-6).any():
             raise RuntimeError("Projector produced alpha_hat outside configured bounds.")

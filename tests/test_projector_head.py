@@ -158,14 +158,53 @@ def test_projector_output_in_range() -> None:
     assert alpha_hat.max() <= alpha_max + 1e-5, f"Above alpha_max: {alpha_hat.max()}"
 
 
-def test_projector_output_size_override() -> None:
-    """Projector should respect output_size argument."""
+@pytest.mark.parametrize(
+    ("batch", "feature_hw", "logit_hw"),
+    [(1, (8, 8), (32, 32)), (1, (11, 11), (44, 44)), (2, (9, 13), (36, 52))],
+)
+def test_projector_output_matches_raw_logit_grid(
+    batch: int, feature_hw: tuple[int, int], logit_hw: tuple[int, int]
+) -> None:
+    projector = CRISPProjectorHead(feature_channels=16, hidden_channels=8)
+    features = torch.randn(batch, 16, *feature_hw)
+    logits = torch.randn(batch, 1, *logit_hw)
+
+    alpha = projector(features, logits)
+    probabilities = calibrate_logits_with_alpha(logits, alpha)
+    assert alpha.shape == logits.shape == probabilities.shape
+    assert (alpha >= projector.alpha_min).all() and (alpha <= projector.alpha_max).all()
+    torch.testing.assert_close(probabilities, torch.sigmoid(alpha * logits))
+
+
+def test_projector_has_no_independent_output_size_override() -> None:
     projector = CRISPProjectorHead(feature_channels=16, hidden_channels=8)
     features = torch.randn(1, 16, 11, 11)
     logits = torch.randn(1, 1, 44, 44)
 
-    alpha = projector(features, logits, output_size=(64, 64))
-    assert alpha.shape == (1, 1, 64, 64)
+    with pytest.raises(TypeError, match="output_size"):
+        projector(features, logits, output_size=(64, 64))
+    with pytest.raises(TypeError):
+        projector(features, logits, (64, 64))
+
+
+@pytest.mark.parametrize(
+    ("feature_shape", "logit_shape", "error"),
+    [
+        ((1, 16, 11), (1, 1, 44, 44), "4D"),
+        ((1, 16, 11, 11), (1, 1, 44), "4D"),
+        ((1, 16, 11, 11), (1, 2, 44, 44), "one foreground channel"),
+        ((2, 16, 11, 11), (1, 1, 44, 44), "same batch size"),
+    ],
+)
+def test_projector_rejects_incompatible_input_shapes(
+    feature_shape: tuple[int, ...], logit_shape: tuple[int, ...], error: str
+) -> None:
+    projector = CRISPProjectorHead(feature_channels=16, hidden_channels=8)
+    features = torch.randn(*feature_shape)
+    logits = torch.randn(*logit_shape)
+
+    with pytest.raises(ValueError, match=error):
+        projector(features, logits)
 
 
 def test_projector_gradients_flow() -> None:
