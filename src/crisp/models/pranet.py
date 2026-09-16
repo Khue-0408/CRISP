@@ -115,9 +115,15 @@ class PraNet(BaseSegmentationModel):
             mode="bilinear",
             align_corners=False,
         )
+        crisp_features = F.interpolate(
+            x2_rfb,
+            size=(logits.shape[-2] // 4, logits.shape[-1] // 4),
+            mode="bilinear",
+            align_corners=False,
+        )
         return SegmentationOutput(
             logits=logits,
-            features=x2_rfb,
+            features=crisp_features,
             aux={
                 "lateral_map_5": lateral_map_5,
                 "lateral_map_4": lateral_map_4,
