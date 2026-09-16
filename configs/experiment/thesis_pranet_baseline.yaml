@@ -26,7 +26,7 @@ training:
     crisp_full: 65
     finetune: 30
     phase2_ramp_epochs: 10
-  batch_size: 16
+  batch_size: 12
   require_validation: true
   optimizer: adamw
   lr_student: 1.0e-4

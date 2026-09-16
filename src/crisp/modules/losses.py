@@ -55,7 +55,7 @@ def pranet_native_side_losses(
 def dice_loss(
     probs: torch.Tensor,
     target: torch.Tensor,
-    eps: float = 1.0e-6,
+    eps: float = 1.0,
 ) -> torch.Tensor:
     """
     Compute soft Dice loss between predicted probabilities and a binary mask.

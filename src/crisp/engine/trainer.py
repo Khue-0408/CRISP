@@ -201,8 +201,8 @@ class Trainer:
 
         # Solver config.
         solver_cfg = crisp_cfg.get("solver", {})
-        self.newton_steps = solver_cfg.get("newton_steps", 2)
-        self.bisection_steps = solver_cfg.get("bisection_steps", 8)
+        self.newton_steps = solver_cfg.get("newton_steps", 3)
+        self.bisection_steps = solver_cfg.get("bisection_steps", 12)
 
         # Thesis schedule config. When absent, keep legacy warmup behavior for
         # focused unit tests and explicit debug configs.
@@ -317,7 +317,7 @@ class Trainer:
             )
         train_cfg = self.config.get("training", {})
         lr_student = train_cfg.get("lr_student", 1e-4)
-        lr_projector = train_cfg.get("lr_projector", 2e-4)
+        lr_projector = train_cfg.get("lr_projector", 5e-4)
         wd = train_cfg.get("weight_decay", 1e-4)
 
         param_groups = [

@@ -29,6 +29,39 @@ def test_dice_loss_perfect_prediction() -> None:
     assert loss.item() < 0.01, f"Expected near-zero loss, got {loss.item()}"
 
 
+def test_dice_loss_uses_manuscript_smoothing() -> None:
+    probs = torch.tensor([[[[0.5, 0.25]]]])
+    target = torch.tensor([[[[1.0, 0.0]]]])
+    expected = 1.0 - (2.0 * 0.5 + 1.0) / (0.5 + 0.25 + 1.0 + 1.0)
+    old_smoothing = 1.0 - (2.0 * 0.5 + 1e-6) / (0.5 + 0.25 + 1.0 + 1e-6)
+
+    assert dice_loss(probs, target).item() == pytest.approx(expected)
+    assert abs(expected - old_smoothing) > 0.1
+
+
+def test_dice_loss_empty_target_uses_same_formula() -> None:
+    probs = torch.tensor([[[[0.25, 0.75]]]])
+    target = torch.zeros_like(probs)
+    expected = 1.0 - 1.0 / (probs.sum().item() + 1.0)
+
+    assert dice_loss(probs, target).item() == pytest.approx(expected)
+
+
+def test_baseline_and_crisp_task_use_same_training_dice_default() -> None:
+    probs = torch.tensor([[[[0.5, 0.25]]]])
+    target = torch.tensor([[[[1.0, 0.0]]]])
+    logits = torch.logit(probs)
+    expected = dice_loss(probs, target)
+    baseline = baseline_bce_dice_loss(logits, target)
+    crisp = crisp_task_loss(
+        probs, target, torch.zeros_like(probs), torch.ones_like(probs), target,
+        lambda_value=0.0, mu_value=0.0, eta_dice=0.5,
+    )
+
+    assert torch.allclose(baseline["dice"], expected)
+    assert torch.allclose(crisp["dice"], expected)
+
+
 def test_baseline_loss_dict_keys() -> None:
     """Baseline loss should return dict with loss, bce, dice."""
     logits = torch.randn(2, 1, 16, 16)

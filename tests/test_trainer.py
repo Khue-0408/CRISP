@@ -114,6 +114,44 @@ def test_trainer_one_step_crisp_smoke(tmp_path: Path) -> None:
     assert "solver/sat_hi" in out.logs
 
 
+def test_paper_optimizer_groups_and_scheduler(tmp_path: Path) -> None:
+    config = _base_crisp_config(tmp_path)
+    config["training"].pop("lr_projector")
+    config["training"]["total_epochs"] = 120
+    model = _TinyModel()
+    projector = CRISPProjectorHead(feature_channels=model.decoder_channels)
+    trainer = Trainer(model, projector, _ConstantTeacherEnsemble(), config)
+
+    optimizer = trainer.build_optimizer()
+    scheduler = trainer.build_scheduler(optimizer)
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert len(optimizer.param_groups) == 2
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-4)
+    assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-4)
+    assert all(group["weight_decay"] == pytest.approx(1e-4) for group in optimizer.param_groups)
+    assert isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingLR)
+    assert scheduler.T_max == 120
+    assert scheduler.eta_min == pytest.approx(1e-6)
+
+
+def test_explicit_projector_lr_override_is_preserved(tmp_path: Path) -> None:
+    config = _base_crisp_config(tmp_path)
+    config["training"]["lr_projector"] = 7e-4
+    trainer = Trainer(_TinyModel(), nn.Conv2d(4, 1, 1), _ConstantTeacherEnsemble(), config)
+
+    assert trainer.build_optimizer().param_groups[1]["lr"] == pytest.approx(7e-4)
+
+
+def test_trainer_solver_fallback_matches_manuscript(tmp_path: Path) -> None:
+    config = _base_crisp_config(tmp_path)
+    config["crisp"].pop("solver")
+    trainer = Trainer(_TinyModel(), None, _ConstantTeacherEnsemble(), config)
+
+    assert trainer.newton_steps == 3
+    assert trainer.bisection_steps == 12
+
+
 def test_trainer_requires_validation_when_configured(tmp_path: Path) -> None:
     """Paper-faithful configs should fail if source validation is missing."""
     config = _base_crisp_config(tmp_path)

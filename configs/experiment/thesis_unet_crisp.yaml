@@ -32,7 +32,7 @@ training:
   require_validation: true
   optimizer: adamw
   lr_student: 1.0e-4
-  lr_projector: 2.0e-4
+  lr_projector: 5.0e-4
   weight_decay: 1.0e-4
   scheduler: cosine
   mixed_precision: true
