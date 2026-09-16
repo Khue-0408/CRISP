@@ -102,8 +102,8 @@ def boundary_support_mask(
     wb_flat = boundary_weight.reshape(B, -1)  # [B, N]
     k = max(1, int(wb_flat.shape[1] * top_percent / 100.0))
 
-    # Select exact per-image top-k support rather than thresholding by value.
-    _, topk_indices = wb_flat.topk(k, dim=1)
+    # Stable descending order breaks equal-weight ties by flattened pixel index.
+    topk_indices = torch.argsort(wb_flat, dim=1, descending=True, stable=True)[:, :k]
     mask = torch.zeros_like(wb_flat)
     mask.scatter_(1, topk_indices, 1.0)
     return mask.reshape(boundary_weight.shape)
@@ -130,9 +130,12 @@ def boundary_expected_calibration_error(
     if mask_flat.sum() == 0:
         return torch.tensor(0.0, device=probs.device)
 
-    p_sel = probs.reshape(-1)[mask_flat]
-    y_sel = labels.reshape(-1)[mask_flat]
-    return expected_calibration_error(p_sel, y_sel, n_bins=n_bins)
+    p_sel = probs.detach().reshape(-1)[mask_flat].float()
+    y_sel = labels.detach().reshape(-1)[mask_flat].bool()
+    confidence = torch.maximum(p_sel, 1.0 - p_sel)
+    correctness = ((p_sel >= 0.5) == y_sel).float()
+    # Reuse the unchanged equal-width ECE bin reducer with predicted-class inputs.
+    return expected_calibration_error(confidence, correctness, n_bins=n_bins)
 
 
 def boundary_area_weighted_ece(

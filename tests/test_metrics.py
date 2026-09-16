@@ -11,6 +11,7 @@ from crisp.engine.evaluator import Evaluator
 from crisp.metrics.calibration import (
     brier_score,
     boundary_area_weighted_ece,
+    boundary_expected_calibration_error,
     expected_calibration_error,
     negative_log_likelihood,
     boundary_support_mask,
@@ -164,13 +165,18 @@ def test_dice_score_no_overlap() -> None:
     assert score.item() < 0.01
 
 
-def test_boundary_support_mask_proportion() -> None:
-    """Boundary support mask should select approximately top_percent pixels."""
-    wb = torch.rand(2, 1, 32, 32)
-    support = boundary_support_mask(wb, top_percent=20.0)
-    prop = support.mean().item()
-    # Should be approximately 20% (give or take ties/rounding).
-    assert 0.15 <= prop <= 0.30, f"Support proportion out of range: {prop}"
+@pytest.mark.parametrize("top_percent, expected_k", [(10.0, 2), (20.0, 4), (30.0, 6)])
+def test_boundary_support_mask_exact_cardinality(top_percent: float, expected_k: int) -> None:
+    wb = torch.arange(20, dtype=torch.float32).reshape(1, 1, 4, 5)
+    support = boundary_support_mask(wb, top_percent=top_percent)
+    assert int(support.sum().item()) == expected_k
+    assert support.reshape(-1).nonzero().reshape(-1).tolist() == list(range(20 - expected_k, 20))
+
+
+def test_boundary_support_mask_default_is_twenty_percent_with_minimum_one() -> None:
+    wb = torch.arange(20, dtype=torch.float32).reshape(1, 1, 4, 5)
+    assert int(boundary_support_mask(wb).sum().item()) == 4
+    assert int(boundary_support_mask(wb[:, :, :1, :1], top_percent=10.0).sum().item()) == 1
 
 
 def test_boundary_support_mask_is_per_image_topk() -> None:
@@ -190,6 +196,91 @@ def test_boundary_support_mask_is_per_image_topk() -> None:
     # Each image should select exactly k pixels (no ties in constructed weights).
     assert int(support[0].sum().item()) == k
     assert int(support[1].sum().item()) == k
+    assert support.reshape(B, -1).nonzero()[:, 1].tolist() == [16, 17, 18, 19] * B
+
+
+def test_boundary_support_mask_ties_use_lowest_flattened_indices() -> None:
+    wb = torch.tensor([9.0, 8.0, 8.0, 8.0, 7.0, 7.0, 6.0, 5.0, 4.0, 3.0]).reshape(1, 1, 1, 10)
+    support = boundary_support_mask(wb, top_percent=30.0)
+    assert support.reshape(-1).nonzero().reshape(-1).tolist() == [0, 1, 2]
+
+
+def test_bece_uses_predicted_class_confidence_and_correctness() -> None:
+    # The first pixel is a confident, correct background prediction: c=.95, a=1.
+    probs = torch.tensor([0.05, 0.05, 0.95, 0.95]).reshape(1, 1, 1, 4)
+    labels = torch.tensor([0.0, 1.0, 1.0, 1.0]).reshape_as(probs)
+    wb = torch.arange(4, dtype=torch.float32).reshape_as(probs)
+    score = boundary_expected_calibration_error(probs, labels, wb, n_bins=10, top_percent=100.0)
+    # All four predicted-class confidences are .95; three of four decisions are correct.
+    assert score.item() == pytest.approx(0.20)
+    # Foreground-probability calibration answers a different question here.
+    assert expected_calibration_error(probs, labels, n_bins=10).item() == pytest.approx(0.25)
+
+
+def test_bece_zero_when_occupied_bins_match_predicted_class_accuracy() -> None:
+    probs = torch.tensor([0.5, 0.5, 0.75, 0.75, 0.25, 0.25]).reshape(1, 1, 1, 6)
+    labels = torch.tensor([1, 0, 1, 1, 0, 1]).reshape_as(probs)
+    wb = torch.ones_like(probs)
+    score = boundary_expected_calibration_error(probs, labels, wb, top_percent=100.0)
+    assert score.item() == pytest.approx(0.0, abs=1e-7)
+
+
+def test_bece_confidence_one_is_in_final_bin_and_empty_bins_are_safe() -> None:
+    probs = torch.ones(1, 1, 1, 1)
+    labels = torch.zeros_like(probs)
+    score = boundary_expected_calibration_error(probs, labels, torch.ones_like(probs))
+    assert torch.isfinite(score)
+    assert score.item() == pytest.approx(1.0)
+
+
+def test_bece_pools_per_image_support_before_binning() -> None:
+    probs = torch.full((2, 1, 1, 5), 0.8)
+    labels = torch.cat([torch.ones(1, 1, 1, 5), torch.zeros(1, 1, 1, 5)])
+    wb = torch.zeros_like(probs)
+    pooled = boundary_expected_calibration_error(probs, labels, wb)
+    per_image_mean = sum(
+        boundary_expected_calibration_error(probs[i:i + 1], labels[i:i + 1], wb[i:i + 1]).item()
+        for i in range(2)
+    ) / 2.0
+    assert int(boundary_support_mask(wb)[0].sum().item()) == 1
+    assert int(boundary_support_mask(wb)[1].sum().item()) == 1
+    assert pooled.item() == pytest.approx(0.3)
+    assert per_image_mean == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize(
+    "top_percent, n_bins, expected_k, expected_bece",
+    [(10.0, 10, 2, 0.235), (20.0, 15, 4, 0.33), (30.0, 20, 6, 0.525)],
+)
+def test_bece_sensitivity_parameters_are_consumed(
+    top_percent: float, n_bins: int, expected_k: int, expected_bece: float
+) -> None:
+    probs = torch.full((1, 1, 1, 20), 0.5)
+    probs.reshape(-1)[-6:] = torch.tensor([0.51, 0.56, 0.61, 0.66, 0.71, 0.76])
+    labels = torch.ones_like(probs)
+    labels.reshape(-1)[-6:] = torch.tensor([1, 0, 1, 0, 1, 0])
+    wb = torch.arange(20, dtype=torch.float32).reshape_as(probs)
+    assert int(boundary_support_mask(wb, top_percent=top_percent).sum().item()) == expected_k
+    score = boundary_expected_calibration_error(
+        probs, labels, wb, n_bins=n_bins, top_percent=top_percent
+    )
+    assert torch.isfinite(score)
+    assert 0.0 <= score.item() <= 1.0
+    assert score.item() == pytest.approx(expected_bece, abs=1e-6)
+
+
+def test_bece_evaluator_uses_dataset_pooled_support() -> None:
+    class ConstantLogits(nn.Module):
+        def forward(self, images: torch.Tensor) -> SegmentationOutput:
+            logits = torch.full_like(images[:, :1], 1.3862943611198906)  # sigmoid = .8
+            return SegmentationOutput(logits=logits, features=logits)
+
+    images = torch.zeros(2, 3, 16, 16)
+    masks = torch.cat([torch.ones(1, 1, 16, 16), torch.zeros(1, 1, 16, 16)])
+    evaluator = Evaluator(model=ConstantLogits(), projector=None, config={})
+    metrics = evaluator.evaluate_dataset([{"image": images, "mask": masks}], "two_images", projector_on=False)
+    assert metrics["bece"] == pytest.approx(0.3, abs=1e-6)
+    assert metrics["bECE"] == metrics["bece"]
 
 
 def test_ba_ece_avoids_zero_mass_nan() -> None:
