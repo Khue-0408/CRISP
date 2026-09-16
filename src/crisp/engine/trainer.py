@@ -35,7 +35,9 @@ from crisp.modules.losses import (
     crisp_amortization_loss,
     crisp_task_loss,
     crisp_total_loss,
+    pranet_native_side_losses,
 )
+from crisp.models.pranet import PraNet
 from crisp.modules.posterior_target import (
     clip_posterior_target,
     compute_boundary_posterior_target,
@@ -76,6 +78,20 @@ class TrainStepOutput:
     loss: torch.Tensor
     logs: Dict[str, float]
     tensors: Optional[Dict[str, torch.Tensor]] = None
+
+
+def _training_output_with_native_aux(
+    final_loss: torch.Tensor,
+    logs: Dict[str, float],
+    native_aux: Optional[Dict[str, torch.Tensor]],
+) -> TrainStepOutput:
+    if native_aux is None:
+        return TrainStepOutput(loss=final_loss, logs=logs)
+    total = final_loss + native_aux["native_aux_loss"]
+    logs["final_loss"] = final_loss.item()
+    logs.update({key: value.item() for key, value in native_aux.items()})
+    logs["loss"] = total.item()
+    return TrainStepOutput(loss=total, logs=logs)
 
 
 class Trainer:
@@ -348,13 +364,18 @@ class Trainer:
             out = self.model(images)
             logits = out.logits       # [B,1,H,W] — raw z, keeps gradients
             features = out.features   # decoder features for projector
+            native_aux = (
+                pranet_native_side_losses(out.aux, masks)
+                if isinstance(self.model, PraNet) else None
+            )
 
             if not self.use_crisp:
                 # Baseline: standard BCE + Dice.
                 loss_dict = baseline_bce_dice_loss(logits, masks)
-                return TrainStepOutput(
-                    loss=loss_dict["loss"],
-                    logs={k: v.item() for k, v in loss_dict.items()},
+                return _training_output_with_native_aux(
+                    loss_dict["loss"],
+                    {k: v.item() for k, v in loss_dict.items()},
+                    native_aux,
                 )
 
             # --- CRISP pipeline ---
@@ -368,7 +389,7 @@ class Trainer:
                     "schedule/mu_factor": float(schedule["mu_factor"]),
                     "schedule/beta_factor": float(schedule["beta_factor"]),
                 })
-                return TrainStepOutput(loss=loss_dict["loss"], logs=logs)
+                return _training_output_with_native_aux(loss_dict["loss"], logs, native_aux)
 
             # 1. Boundary weighting field.
             wb = compute_boundary_weight(masks, sigma_b=self.sigma_b, mode=self.boundary_mode)
@@ -467,7 +488,7 @@ class Trainer:
             "schedule/beta_factor": float(schedule["beta_factor"]),
         })
 
-        return TrainStepOutput(loss=total_dict["loss"], logs=logs)
+        return _training_output_with_native_aux(total_dict["loss"], logs, native_aux)
 
     def train_one_epoch(self, dataloader: Any, epoch: int) -> Dict[str, float]:
         """Train for one epoch and aggregate logging statistics."""

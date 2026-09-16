@@ -18,6 +18,40 @@ import torch
 import torch.nn.functional as F
 
 
+PRANET_NATIVE_SIDE_KEYS = ("lateral_map_5", "lateral_map_4", "lateral_map_3")
+PRANET_NATIVE_AUX_KEYS = (*PRANET_NATIVE_SIDE_KEYS, "lateral_map_2")
+
+
+def pranet_native_structure_loss(pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """PraNet's effective BCE plus weighted IoU from MyTrain.py."""
+    if pred.shape != mask.shape:
+        raise ValueError("PraNet prediction and mask must have matching shapes.")
+    mask = mask.float()
+    weight = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+    # MyTrain.py passes legacy reduce='none'. Its nonempty string is treated as
+    # True by PyTorch, so the effective BCE is a scalar mean, not pixelwise BCE.
+    wbce = F.binary_cross_entropy_with_logits(pred, mask, reduction="mean")
+    wbce = (weight * wbce).sum(dim=(2, 3)) / weight.sum(dim=(2, 3))
+    probability = torch.sigmoid(pred)
+    intersection = (probability * mask * weight).sum(dim=(2, 3))
+    union = ((probability + mask) * weight).sum(dim=(2, 3))
+    wiou = 1 - (intersection + 1) / (union - intersection + 1)
+    return (wbce + wiou).mean()
+
+
+def pranet_native_side_losses(
+    aux: dict[str, torch.Tensor] | None, mask: torch.Tensor
+) -> Dict[str, torch.Tensor]:
+    """Sum PraNet's three native side-map losses, excluding final lateral_map_2."""
+    if aux is None or set(aux) != set(PRANET_NATIVE_AUX_KEYS):
+        raise ValueError(f"PraNet auxiliary maps must be exactly {PRANET_NATIVE_AUX_KEYS}.")
+    side_losses = {
+        f"native_aux/{key}": pranet_native_structure_loss(aux[key], mask)
+        for key in PRANET_NATIVE_SIDE_KEYS
+    }
+    return {"native_aux_loss": sum(side_losses.values()), **side_losses}
+
+
 def dice_loss(
     probs: torch.Tensor,
     target: torch.Tensor,
