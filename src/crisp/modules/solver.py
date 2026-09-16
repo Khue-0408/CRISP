@@ -161,6 +161,43 @@ def projection_hessian(
     return fit_curvature + reg_curvature
 
 
+def _safeguarded_newton_step(
+    alpha: torch.Tensor,
+    lo: torch.Tensor,
+    hi: torch.Tensor,
+    stabilized_logits: torch.Tensor,
+    clipped_target: torch.Tensor,
+    boundary_weight: torch.Tensor,
+    lambda_value: float,
+    mu_value: float,
+    active: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Use Newton only when its proposal is finite, bracketed, and improves |g|."""
+    g_current = projection_gradient(
+        alpha, stabilized_logits, clipped_target, boundary_weight,
+        lambda_value, mu_value,
+    )
+    h_current = projection_hessian(
+        alpha, stabilized_logits, boundary_weight, lambda_value, mu_value,
+    ).clamp(min=1e-8)
+    proposal = alpha - g_current / h_current
+    finite = torch.isfinite(proposal)
+    outside = active & finite & ((proposal <= lo) | (proposal >= hi))
+    g_proposal = projection_gradient(
+        proposal, stabilized_logits, clipped_target, boundary_weight,
+        lambda_value, mu_value,
+    )
+    no_decrease = (
+        active & finite & ~outside
+        & (~torch.isfinite(g_proposal) | (g_proposal.abs() >= g_current.abs()))
+    )
+    accepted = active & finite & ~outside & ~no_decrease
+    candidate = torch.where(accepted, proposal, 0.5 * (lo + hi))
+    candidate = torch.where(active, candidate, alpha)
+    invalid = active & ~finite
+    return candidate, accepted, outside, no_decrease, invalid
+
+
 def solve_alpha_star(
     logits: torch.Tensor,
     clipped_target: torch.Tensor,
@@ -220,92 +257,94 @@ def solve_alpha_star(
             f"Expected alpha_min < alpha_max, got {alpha_min} >= {alpha_max}."
         )
 
-    # --- Step 1: Stabilize logits (detached) ---
+    # --- Step 1: Stabilize detached inputs and evaluate KKT endpoints. ---
     z_tilde = stabilize_logits_for_solver(logits, zmax=zmax, zeta=zeta)
-
-    # --- Step 2: Closed-form seed ---
-    alpha = closed_form_seed(z_tilde, clipped_target, alpha_min, alpha_max)
-
-    # Track diagnostics.
-    newton_invalid_count = torch.zeros_like(alpha)
-
-    # --- Step 3: Safeguarded Newton steps ---
-    for _ in range(newton_steps):
-        g = projection_gradient(
-            alpha, z_tilde, clipped_target, boundary_weight,
-            lambda_value, mu_value,
-        )
-        h = projection_hessian(
-            alpha, z_tilde, boundary_weight,
-            lambda_value, mu_value,
-        )
-        # Safeguard: ensure hessian is positive.
-        h_safe = h.clamp(min=1e-8)
-        newton_update = g / h_safe
-        alpha_prop = alpha - newton_update
-
-        # Check validity before clamping: NaN/Inf proposals or NaN/Inf updates.
-        invalid = (
-            torch.isnan(alpha_prop)
-            | torch.isinf(alpha_prop)
-            | torch.isnan(newton_update)
-            | torch.isinf(newton_update)
-        )
-        newton_invalid_count += invalid.float()
-
-        # Clamp into the feasible interval (Newton is safeguarded by projection).
-        alpha_new = alpha_prop.clamp(alpha_min, alpha_max)
-        # Keep old alpha where invalid.
-        alpha = torch.where(invalid, alpha, alpha_new)
-
-    # --- Step 4: Bisection refinement (with bound-optimum handling) ---
-    # CRISP local objective is strongly convex after stabilization (§7-§9), so
-    # g(α) is monotone increasing. The unique minimizer is:
-    # - interior root if g(α_min) <= 0 <= g(α_max),
-    # - otherwise the nearer bound (α_min if g(α_min) > 0, α_max if g(α_max) < 0).
+    clipped_target = clipped_target.detach()
+    boundary_weight = boundary_weight.detach()
+    alpha_lo = torch.full_like(z_tilde, alpha_min)
+    alpha_hi = torch.full_like(z_tilde, alpha_max)
     g_lo = projection_gradient(
-        torch.full_like(alpha, alpha_min),
-        z_tilde, clipped_target, boundary_weight,
+        alpha_lo, z_tilde, clipped_target, boundary_weight,
         lambda_value, mu_value,
     )
     g_hi = projection_gradient(
-        torch.full_like(alpha, alpha_max),
-        z_tilde, clipped_target, boundary_weight,
+        alpha_hi, z_tilde, clipped_target, boundary_weight,
         lambda_value, mu_value,
     )
+    choose_lo = g_lo >= 0
+    choose_hi = ~choose_lo & (g_hi <= 0)
+    interior = ~choose_lo & ~choose_hi
+    alpha = torch.where(choose_lo, alpha_lo, alpha_hi)
+    lo = alpha_lo.clone()
+    hi = alpha_hi.clone()
 
-    bracketed = (g_lo <= 0) & (g_hi >= 0)
-    choose_lo = g_lo > 0
-    choose_hi = g_hi < 0
+    # --- Step 2: Seed and bracket only the interior roots. ---
+    if interior.any():
+        seed = closed_form_seed(z_tilde, clipped_target, alpha_min, alpha_max)
+        alpha = torch.where(interior, seed, alpha)
+        g_seed = projection_gradient(
+            alpha, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value,
+        )
+        lo = torch.where(interior & (g_seed < 0), alpha, lo)
+        hi = torch.where(interior & (g_seed > 0), alpha, hi)
 
-    # Start from current alpha, then overwrite where we know the bound optimum.
-    alpha = torch.where(choose_lo, torch.full_like(alpha, alpha_min), alpha)
-    alpha = torch.where(choose_hi, torch.full_like(alpha, alpha_max), alpha)
+    residual_tol = 1e-4
+    newton_invalid_count = torch.zeros_like(alpha)
+    newton_outside_count = torch.zeros_like(alpha)
+    newton_no_decrease_count = torch.zeros_like(alpha)
+    newton_accepted_count = torch.zeros_like(alpha)
+    newton_fallback_count = torch.zeros_like(alpha)
+    used_bisection = torch.zeros_like(interior)
 
-    # Only bisect where the root is bracketed and the current gradient is not small.
-    g_current = projection_gradient(
-        alpha, z_tilde, clipped_target, boundary_weight,
-        lambda_value, mu_value,
-    ).abs()
-    needs_bisection = bracketed & (g_current > 1e-4)
+    # --- Step 3: Safeguarded Newton attempts, bisecting rejected proposals. ---
+    for _ in range(newton_steps):
+        g_current = projection_gradient(
+            alpha, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value,
+        )
+        active = interior & (g_current.abs() > residual_tol)
+        if not active.any():
+            break
+        candidate, accepted, outside, no_decrease, invalid = _safeguarded_newton_step(
+            alpha, lo, hi, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value, active,
+        )
+        fallback = active & ~accepted
+        g_candidate = projection_gradient(
+            candidate, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value,
+        )
+        newton_invalid_count += invalid.float()
+        newton_outside_count += outside.float()
+        newton_no_decrease_count += no_decrease.float()
+        newton_accepted_count += accepted.float()
+        newton_fallback_count += fallback.float()
+        used_bisection |= fallback
+        lo = torch.where(active & (g_candidate < 0), candidate, lo)
+        hi = torch.where(active & (g_candidate > 0), candidate, hi)
+        alpha = torch.where(active, candidate, alpha)
 
-    if needs_bisection.any():
-        bis_lo = torch.full_like(alpha, alpha_min)
-        bis_hi = torch.full_like(alpha, alpha_max)
-
-        for _ in range(bisection_steps):
-            mid = 0.5 * (bis_lo + bis_hi)
-            g_mid = projection_gradient(
-                mid, z_tilde, clipped_target, boundary_weight,
-                lambda_value, mu_value,
-            )
-            # Monotone g: if g(mid) > 0, root lies left; else right.
-            move_hi = g_mid > 0
-            bis_hi = torch.where(move_hi, mid, bis_hi)
-            bis_lo = torch.where(move_hi, bis_lo, mid)
-
-        bis_result = 0.5 * (bis_lo + bis_hi)
-        alpha = torch.where(needs_bisection, bis_result, alpha)
+    # --- Step 4: At most bisection_steps further bracket refinements. ---
+    for _ in range(bisection_steps):
+        g_current = projection_gradient(
+            alpha, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value,
+        )
+        # Once Newton has fallen back, finish bracket refinement even if a
+        # small derivative masks a wider alpha error under low curvature.
+        active = interior & ((g_current.abs() > residual_tol) | (used_bisection & (g_current != 0)))
+        if not active.any():
+            break
+        mid = 0.5 * (lo + hi)
+        g_mid = projection_gradient(
+            mid, z_tilde, clipped_target, boundary_weight,
+            lambda_value, mu_value,
+        )
+        lo = torch.where(active & (g_mid < 0), mid, lo)
+        hi = torch.where(active & (g_mid > 0), mid, hi)
+        alpha = torch.where(active, mid, alpha)
+        used_bisection |= active
 
     # --- Step 5: Final clamp and detach ---
     alpha_star = alpha.clamp(alpha_min, alpha_max).detach()
@@ -317,10 +356,12 @@ def solve_alpha_star(
         "sat_lo": (alpha_star <= alpha_min + 1e-6).float().mean(),
         "sat_hi": (alpha_star >= alpha_max - 1e-6).float().mean(),
         "newton_invalid": newton_invalid_count.sum(),
-        "bisection_pixels": needs_bisection.float().mean()
-        if needs_bisection.any()
-        else torch.tensor(0.0, device=alpha_star.device),
-        "bracket_rate": bracketed.float().mean(),
+        "newton_outside_bracket": newton_outside_count.sum(),
+        "newton_no_residual_decrease": newton_no_decrease_count.sum(),
+        "newton_accepted": newton_accepted_count.sum(),
+        "newton_fallback": newton_fallback_count.sum(),
+        "bisection_pixels": used_bisection.float().mean(),
+        "bracket_rate": interior.float().mean(),
     }
 
     return alpha_star, diagnostics
