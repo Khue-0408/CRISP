@@ -12,13 +12,15 @@ math-only unit tests:
 from __future__ import annotations
 
 from pathlib import Path
+from itertools import permutations
 
+import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from crisp.engine.checkpointing import load_checkpoint
-from crisp.engine.trainer import Trainer
+from crisp.engine.trainer import BOUNDARY_F1_WINDOW, SELECTION_METRIC, Trainer
 from crisp.models.base import SegmentationOutput
 from crisp.models.projector_head import CRISPProjectorHead
 from crisp.tests_support.toy_data import make_toy_batch
@@ -168,7 +170,7 @@ def test_checkpoint_payload_includes_reproducibility_state(tmp_path: Path) -> No
     assert "best_boundary_f1" in checkpoint
     assert "best_bece" in checkpoint
     assert "best_epoch" in checkpoint
-    assert checkpoint["selection_metric"] == "validation_boundary_f1_then_bece_then_dice"
+    assert checkpoint["selection_metric"] == SELECTION_METRIC
 
 
 def test_thesis_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path) -> None:
@@ -207,16 +209,112 @@ def test_thesis_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path)
     assert phase_iii["phase_id"] == 3
 
 
-def test_validation_score_prefers_boundary_f1_then_lower_bece() -> None:
-    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.2}) > Trainer._validation_score(
-        {"boundary_f1": 0.7, "bece": 0.01}
-    )
-    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.1}) > Trainer._validation_score(
-        {"boundary_f1": 0.8, "bece": 0.2}
-    )
-    assert Trainer._validation_score({"boundary_f1": 0.8, "bece": 0.1, "dice": 0.9}) > Trainer._validation_score(
-        {"boundary_f1": 0.8, "bece": 0.1, "dice": 0.8}
-    )
+def _selected_epoch(rows: list[tuple[int, float, float, float]]) -> int:
+    candidates = [
+        Trainer._validation_candidate(
+            epoch, {"boundary_f1": boundary_f1, "bece": bece, "dice": dice}
+        )
+        for epoch, boundary_f1, bece, dice in rows
+    ]
+    return Trainer._select_validation_candidate(candidates).epoch
+
+
+def test_selection_clear_boundary_f1_winner_outside_window() -> None:
+    assert _selected_epoch([(0, 0.800, 0.01, 0.90), (1, 0.803, 0.50, 0.80)]) == 1
+
+
+def test_selection_lower_bece_wins_within_window() -> None:
+    assert _selected_epoch([(0, 0.800, 0.01, 0.80), (1, 0.801, 0.10, 0.90)]) == 0
+
+
+def test_selection_exact_window_boundary_is_eligible() -> None:
+    b_max = 0.802
+    boundary = b_max - BOUNDARY_F1_WINDOW
+    assert _selected_epoch([(0, boundary, 0.01, 0.80), (1, b_max, 0.50, 0.90)]) == 0
+
+
+def test_selection_just_outside_window_is_ineligible() -> None:
+    b_max = 0.802
+    below = b_max - BOUNDARY_F1_WINDOW - 1e-6
+    assert _selected_epoch([(0, below, 0.01, 0.80), (1, b_max, 0.50, 0.90)]) == 1
+
+
+def test_selection_higher_dice_breaks_equal_bece() -> None:
+    assert _selected_epoch([(0, 0.800, 0.10, 0.80), (1, 0.801, 0.10, 0.90)]) == 1
+
+
+def test_selection_earliest_epoch_breaks_equal_bece_and_dice() -> None:
+    assert _selected_epoch([(2, 0.801, 0.10, 0.90), (0, 0.800, 0.10, 0.90)]) == 0
+
+
+def test_selection_is_independent_of_candidate_iteration_order() -> None:
+    rows = [(0, 0.800, 0.01, 0.80), (1, 0.801, 0.10, 0.90), (2, 0.798, 0.001, 0.95)]
+    assert {_selected_epoch(list(order)) for order in permutations(rows)} == {0}
+
+
+def test_selection_reconsiders_history_after_late_new_boundary_f1_maximum() -> None:
+    first_two = [(0, 0.800, 0.01, 0.80), (1, 0.801, 0.10, 0.90)]
+    assert _selected_epoch(first_two) == 0
+    assert _selected_epoch(first_two + [(2, 0.803, 0.20, 0.95)]) == 1
+
+
+@pytest.mark.parametrize("metric", ["boundary_f1", "bece", "dice"])
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf")])
+def test_selection_rejects_non_finite_validation_metric(metric: str, nonfinite: float) -> None:
+    metrics = {"boundary_f1": 0.8, "bece": 0.1, "dice": 0.9}
+    metrics[metric] = nonfinite
+    with pytest.raises(ValueError, match=f"Epoch 4 validation {metric} is non-finite"):
+        Trainer._validation_candidate(4, metrics)
+
+
+def test_checkpoint_selection_materializes_selected_older_epoch_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import crisp.engine.evaluator as evaluator_module
+
+    class MarkerModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.marker = nn.Parameter(torch.tensor(0.0))
+
+    model = MarkerModel()
+    config = _base_crisp_config(tmp_path)
+    config["method"] = {"use_crisp": False, "use_projector": False, "use_teachers": False}
+    config["training"]["epochs"] = 3
+    config["training"]["scheduler"] = "none"
+    trainer = Trainer(model=model, projector=None, teacher_ensemble=None, config=config)
+
+    def fake_train_one_epoch(_loader: object, epoch: int) -> dict[str, float]:
+        with torch.no_grad():
+            model.marker.fill_(epoch + 1)
+        return {"loss": 0.0}
+
+    class FakeEvaluator:
+        def __init__(self, current_model: nn.Module, _projector: object, _config: dict) -> None:
+            self.current_model = current_model
+
+        def evaluate_dataset(self, _loader: object, _name: str, projector_on: bool) -> dict[str, float]:
+            metrics = [
+                {"boundary_f1": 0.800, "bece": 0.01, "dice": 0.80},
+                {"boundary_f1": 0.801, "bece": 0.10, "dice": 0.90},
+                {"boundary_f1": 0.803, "bece": 0.20, "dice": 0.95},
+            ]
+            return metrics[int(self.current_model.marker.item()) - 1]
+
+    monkeypatch.setattr(trainer, "train_one_epoch", fake_train_one_epoch)
+    monkeypatch.setattr(evaluator_module, "Evaluator", FakeEvaluator)
+    trainer.fit(train_loader=[], val_loader=[{}])
+
+    best = load_checkpoint(tmp_path / "best.pt")
+    latest = load_checkpoint(tmp_path / "epoch_3.pt")
+    assert best["epoch"] == best["best_epoch"] == 1
+    assert best["best_boundary_f1"] == pytest.approx(0.801)
+    assert best["best_bece"] == pytest.approx(0.10)
+    assert best["selection_metric"] == SELECTION_METRIC
+    assert best["model_state_dict"]["marker"].item() == pytest.approx(2.0)
+    assert latest["epoch"] == 2
+    assert latest["best_epoch"] == 1
+    assert latest["model_state_dict"]["marker"].item() == pytest.approx(3.0)
 
 
 def test_training_total_epochs_and_phases_schema_controls_schedule(tmp_path: Path) -> None:

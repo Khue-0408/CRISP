@@ -18,8 +18,11 @@ CRISP reference: instruct.md §12, §13, §15.
 from __future__ import annotations
 
 import logging
+import math
+import shutil
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Sequence
 
 import torch
 import torch.nn as nn
@@ -42,6 +45,17 @@ from crisp.modules.teacher_posterior import aggregate_teacher_posterior
 from crisp.utils.logging import log_metrics
 
 logger = logging.getLogger("crisp")
+
+BOUNDARY_F1_WINDOW = 0.002
+SELECTION_METRIC = "validation_boundary_f1_within_0.002_then_bece_then_dice_then_earliest_epoch"
+
+
+@dataclass(frozen=True)
+class _ValidationCandidate:
+    epoch: int
+    boundary_f1: float
+    bece: float
+    dice: float
 
 
 @dataclass
@@ -497,7 +511,7 @@ class Trainer:
         best_boundary_f1: Optional[float] = None,
         best_bece: Optional[float] = None,
         best_epoch: Optional[int] = None,
-        selection_metric: str = "validation_boundary_f1_then_bece_then_dice",
+        selection_metric: str = SELECTION_METRIC,
     ) -> Dict[str, Any]:
         """
         Build a reproducibility-focused checkpoint payload.
@@ -528,19 +542,35 @@ class Trainer:
         }
 
     @staticmethod
-    def _validation_score(val_metrics: Dict[str, float]) -> tuple[float, float, float]:
-        """
-        Lexicographic checkpoint score: maximize B-F1, minimize bECE, then maximize Dice.
-        """
-        boundary_f1 = float(
-            val_metrics.get(
-                "boundary_f1",
-                val_metrics.get("B-F1", val_metrics.get("bf1", val_metrics.get("dice", 0.0))),
-            )
+    def _validation_candidate(epoch: int, val_metrics: Dict[str, float]) -> _ValidationCandidate:
+        """Read and validate the three source-validation selection metrics."""
+        def metric(name: str, aliases: tuple[str, ...]) -> float:
+            for key in aliases:
+                if key in val_metrics:
+                    value = float(val_metrics[key])
+                    if not math.isfinite(value):
+                        raise ValueError(f"Epoch {epoch} validation {name} is non-finite: {value}")
+                    return value
+            raise ValueError(f"Epoch {epoch} validation {name} is missing")
+
+        return _ValidationCandidate(
+            epoch=epoch,
+            boundary_f1=metric("boundary_f1", ("boundary_f1", "B-F1", "bf1")),
+            bece=metric("bece", ("bece", "bECE")),
+            dice=metric("dice", ("dice", "mDice")),
         )
-        bece = float(val_metrics.get("bece", val_metrics.get("bECE", float("inf"))))
-        dice = float(val_metrics.get("dice", val_metrics.get("mDice", 0.0)))
-        return boundary_f1, -bece, dice
+
+    @staticmethod
+    def _select_validation_candidate(candidates: Sequence[_ValidationCandidate]) -> _ValidationCandidate:
+        """Select from the global B-F1 window, then bECE, Dice, and epoch."""
+        if not candidates:
+            raise ValueError("Checkpoint selection requires validation candidates")
+        b_max = max(candidate.boundary_f1 for candidate in candidates)
+        eligible = (
+            candidate for candidate in candidates
+            if candidate.boundary_f1 >= b_max - BOUNDARY_F1_WINDOW
+        )
+        return min(eligible, key=lambda candidate: (candidate.bece, -candidate.dice, candidate.epoch))
 
     def fit(
         self, train_loader: Any, val_loader: Optional[Any] = None
@@ -563,13 +593,16 @@ class Trainer:
         best_boundary_f1: Optional[float] = None
         best_bece: Optional[float] = None
         best_epoch: Optional[int] = None
-        selection_metric = "validation_boundary_f1_then_bece_then_dice"
-        best_val_score = (-float("inf"), -float("inf"), -float("inf"))
+        selection_metric = SELECTION_METRIC
+        candidates: list[_ValidationCandidate] = []
+        candidate_paths: dict[int, Path] = {}
         if self.require_validation and val_loader is None:
             raise ValueError(
                 "This experiment requires a source-validation loader for paper-faithful "
                 "checkpoint selection, but no validation loader was provided."
             )
+        if val_loader is not None and (Path(output_dir) / "best.pt").exists():
+            raise FileExistsError(f"Selection checkpoint already exists: {Path(output_dir) / 'best.pt'}")
 
         train_batches = len(train_loader) if hasattr(train_loader, "__len__") else "unknown"
         val_batches = len(val_loader) if (val_loader is not None and hasattr(val_loader, "__len__")) else 0
@@ -613,26 +646,35 @@ class Trainer:
                 )
                 log_metrics(val_metrics, epoch, "val")
 
-                val_score = self._validation_score(val_metrics)
-                if val_score > best_val_score:
-                    best_val_score = val_score
-                    best_boundary_f1 = val_score[0]
-                    best_bece = -val_score[1]
-                    best_epoch = epoch
-                    best_val_metric = best_boundary_f1
+                candidate = self._validation_candidate(epoch, val_metrics)
+                candidates.append(candidate)
+                b_max = max(item.boundary_f1 for item in candidates)
+                if candidate.boundary_f1 >= b_max - BOUNDARY_F1_WINDOW:
+                    candidate_path = Path(output_dir) / f"selection_epoch_{epoch + 1}.pt"
+                    if candidate_path.exists():
+                        raise FileExistsError(f"Selection candidate already exists: {candidate_path}")
                     save_checkpoint(
-                        f"{output_dir}/best.pt",
+                        candidate_path,
                         self._checkpoint_state(
                             epoch=epoch,
                             train_metrics=avg_logs,
                             val_metrics=val_metrics,
-                            best_val_metric=best_val_metric,
-                            best_boundary_f1=best_boundary_f1,
-                            best_bece=best_bece,
-                            best_epoch=best_epoch,
+                            best_val_metric=candidate.boundary_f1,
+                            best_boundary_f1=candidate.boundary_f1,
+                            best_bece=candidate.bece,
+                            best_epoch=candidate.epoch,
                             selection_metric=selection_metric,
                         ),
                     )
+                    candidate_paths[epoch] = candidate_path
+
+                selected = self._select_validation_candidate(candidates)
+                if selected.epoch != best_epoch:
+                    best_boundary_f1 = selected.boundary_f1
+                    best_bece = selected.bece
+                    best_epoch = selected.epoch
+                    best_val_metric = selected.boundary_f1
+                    shutil.copyfile(candidate_paths[selected.epoch], Path(output_dir) / "best.pt")
 
             # Periodic checkpoint.
             if (epoch + 1) % 10 == 0 or epoch == self.epochs - 1:
