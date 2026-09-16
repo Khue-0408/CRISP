@@ -4,8 +4,8 @@ CRISP amortized projector head.
 This module implements the lightweight head that predicts the spatial inverse-temperature
 field α̂_φ(u) from decoder features and student logits. In the paper,
 the head is a two-layer 3x3 convolutional block with 64 hidden channels, GroupNorm,
-GELU, and a final 1x1 convolution, operating at quarter resolution and upsampled
-to logit resolution. [file:1]
+GELU, and a final 1x1 convolution, operating on the supplied feature grid and
+upsampled to logit resolution. [file:1]
 
 CRISP reference: instruct.md §10.
 """
@@ -42,13 +42,15 @@ class CRISPProjectorHead(nn.Module):
         Upper bound of the inverse-temperature interval (default 1.75).
     norm:
         Normalization type used inside the projector head.
+    num_groups:
+        Number of GroupNorm groups (default 8).
 
     CRISP reference
     ---------------
     instruct.md §10:
       α̂(u) = α_min + (α_max - α_min) · σ(a_φ(F_θ(x)(u), z(u)))
       Two-layer 3×3 conv block, 64 hidden channels, GroupNorm, GELU, 1×1 conv.
-      Predicts at quarter resolution and is bilinearly upsampled.
+      Predicts on the supplied feature grid and is bilinearly upsampled.
     """
 
     def __init__(
@@ -58,6 +60,7 @@ class CRISPProjectorHead(nn.Module):
         alpha_min: float = 0.50,
         alpha_max: float = 1.75,
         norm: str = "groupnorm",
+        num_groups: int = 8,
     ) -> None:
         super().__init__()
         if alpha_min >= alpha_max:
@@ -68,6 +71,11 @@ class CRISPProjectorHead(nn.Module):
             raise ValueError(
                 "CRISPProjectorHead currently supports only GroupNorm, matching instruct.md §10."
             )
+        if num_groups <= 0 or hidden_channels % num_groups != 0:
+            raise ValueError(
+                "Projector hidden_channels must be divisible by positive num_groups, "
+                f"got {hidden_channels} and {num_groups}."
+            )
         self.alpha_min = alpha_min
         self.alpha_max = alpha_max
 
@@ -75,7 +83,6 @@ class CRISPProjectorHead(nn.Module):
         in_channels = feature_channels + 1
 
         # Two 3×3 conv layers with GroupNorm and GELU.
-        num_groups = min(32, hidden_channels)  # GroupNorm requires groups ≤ channels
         self.conv1 = nn.Conv2d(in_channels, hidden_channels, kernel_size=3, padding=1, bias=False)
         self.norm1 = nn.GroupNorm(num_groups, hidden_channels)
         self.act1 = nn.GELU()
@@ -115,7 +122,7 @@ class CRISPProjectorHead(nn.Module):
         if output_size is None:
             output_size = (logits.shape[2], logits.shape[3])
 
-        # Step 1: Align logits to feature resolution (quarter resolution).
+        # Step 1: Align raw logits to the supplied feature resolution.
         feat_size = (features.shape[2], features.shape[3])
         logits_down = F.interpolate(
             logits, size=feat_size, mode="bilinear", align_corners=False
@@ -131,13 +138,11 @@ class CRISPProjectorHead(nn.Module):
         # Step 4: Predict unconstrained score map.
         score = self.head(x)  # [B, 1, Hf, Wf]
 
-        # Step 5: Upsample to output resolution.
-        score = F.interpolate(
-            score, size=output_size, mode="bilinear", align_corners=False
+        # Step 5: Map the feature-grid score to bounded alpha, then upsample alpha.
+        alpha_low = self.alpha_min + (self.alpha_max - self.alpha_min) * torch.sigmoid(score)
+        alpha_hat = F.interpolate(
+            alpha_low, size=output_size, mode="bilinear", align_corners=False
         )  # [B, 1, H, W]
-
-        # Step 6: Sigmoid-affine remap to enforce [alpha_min, alpha_max].
-        alpha_hat = self.alpha_min + (self.alpha_max - self.alpha_min) * torch.sigmoid(score)
         if (alpha_hat < self.alpha_min - 1e-6).any() or (alpha_hat > self.alpha_max + 1e-6).any():
             raise RuntimeError("Projector produced alpha_hat outside configured bounds.")
 

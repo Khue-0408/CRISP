@@ -27,6 +27,7 @@ projector_head:
   hidden_channels: 64
   num_conv_layers: 2
   norm: groupnorm
+  num_groups: 8
   activation: gelu
   predict_resolution: quarter
   upsample_mode: bilinear

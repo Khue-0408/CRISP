@@ -19,7 +19,6 @@ from crisp.data.datasets import (
     build_binary_segmentation_dataset,
     build_local_train_val_dataset,
 )
-from crisp.data.transforms import build_eval_transforms, build_train_transforms
 from crisp.models.projector_head import CRISPProjectorHead
 
 
@@ -156,12 +155,22 @@ def build_projector(config: Dict[str, Any], in_channels: int) -> Any:
     proj_cfg = crisp_cfg.get("projector_head", {})
     alpha_cfg = crisp_cfg.get("projection", {})
 
+    for key, expected in (
+        ("num_conv_layers", 2),
+        ("activation", "gelu"),
+        ("upsample_mode", "bilinear"),
+    ):
+        value = proj_cfg.get(key, expected)
+        if value != expected:
+            raise ValueError(f"projector_head.{key}={value!r} is unsupported; expected {expected!r}.")
+
     return CRISPProjectorHead(
         feature_channels=in_channels,
         hidden_channels=proj_cfg.get("hidden_channels", 64),
         alpha_min=alpha_cfg.get("alpha_min", 0.50),
         alpha_max=alpha_cfg.get("alpha_max", 1.75),
         norm=proj_cfg.get("norm", "groupnorm"),
+        num_groups=proj_cfg.get("num_groups", 8),
     )
 
 
@@ -182,6 +191,8 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
     BinarySegmentationDataset
         Instantiated dataset object.
     """
+    from crisp.data.transforms import build_eval_transforms, build_train_transforms
+
     data_cfg = dict(config.get("source_data", config))
     split_cfg = dict(data_cfg.get("splits", {}).get(split, {}))
     merged_cfg = {**data_cfg, **split_cfg}
