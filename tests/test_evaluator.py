@@ -7,6 +7,12 @@ These tests protect against method drift in the inference protocol:
 - no teachers/solver are invoked during inference.
 """
 
+import runpy
+import sys
+from pathlib import Path
+from types import ModuleType
+
+import pytest
 import torch
 import torch.nn as nn
 
@@ -44,6 +50,184 @@ class _ConstantLogitModel(nn.Module):
         logits = torch.full((B, 1, H, W), self.logit_value, device=x.device)
         features = torch.zeros((B, self.decoder_channels, H // 4, W // 4), device=x.device)
         return SegmentationOutput(logits=logits, features=features)
+
+
+class _StatefulModel(nn.Module):
+    decoder_channels = 1
+
+    def __init__(self, weight: float) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.tensor(weight))
+
+    def forward(self, images: torch.Tensor) -> SegmentationOutput:
+        logits = self.weight * images[:, :1]
+        return SegmentationOutput(logits=logits, features=logits)
+
+
+class _StatefulProjector(nn.Module):
+    def __init__(self, alpha: float) -> None:
+        super().__init__()
+        self.alpha = nn.Parameter(torch.tensor(alpha))
+
+    def forward(self, features: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
+        return torch.ones_like(logits) * self.alpha
+
+
+def _run_evaluation_script(
+    monkeypatch: pytest.MonkeyPatch, config: dict, model: nn.Module, projector: nn.Module | None
+) -> None:
+    # Replace unavailable CLI and factory dependencies; checkpoint loading stays real.
+    hydra = ModuleType("hydra")
+    hydra.main = lambda **_kwargs: lambda function: function
+    omegaconf = ModuleType("omegaconf")
+    omegaconf.DictConfig = dict
+
+    class OmegaConf:
+        @staticmethod
+        def to_container(cfg: dict, **_kwargs: object) -> dict:
+            return cfg
+
+    omegaconf.OmegaConf = OmegaConf
+    registry = ModuleType("crisp.registry")
+    registry.build_model = lambda _config: model
+    registry.build_projector = lambda _config, in_channels: projector
+    registry.get_model_decoder_channels = lambda current_model: current_model.decoder_channels
+    registry.build_dataset = lambda _config, split: None
+    monkeypatch.setitem(sys.modules, "hydra", hydra)
+    monkeypatch.setitem(sys.modules, "omegaconf", omegaconf)
+    monkeypatch.setitem(sys.modules, "crisp.registry", registry)
+    script = runpy.run_module("crisp.scripts.evaluate", run_name="crisp.scripts.evaluate_test")
+    globals_ = script["main"].__globals__
+    globals_["setup_logger"] = lambda _output_dir: None
+
+    image = torch.zeros(3, 16, 16)
+    image[0, :, :8] = -1.0
+    image[0, :, 8:] = 1.0
+    mask = (image[:1] >= 0).float()
+    globals_["build_dataset"] = lambda _config, split: [{"image": image, "mask": mask}]
+    globals_["main"](config)
+
+
+def _script_config(tmp_path: Path, checkpoint_path: Path, use_projector: bool = True) -> dict:
+    return {
+        "seed": 7,
+        "checkpoint": str(checkpoint_path),
+        "eval_output_dir": str(tmp_path / "eval"),
+        "method": {"use_crisp": use_projector, "use_projector": use_projector},
+        "eval_datasets": ["toy"],
+        "eval_data": {"toy": {"num_workers": 0, "pin_memory": False}},
+        "eval": {"batch_size": 1},
+    }
+
+
+def _save_test_checkpoint(path: Path, projector_state: object = None, include_projector: bool = True) -> None:
+    state = {"model_state_dict": _StatefulModel(2.0).state_dict()}
+    if include_projector:
+        state["projector_state_dict"] = projector_state
+    torch.save(state, path)
+
+
+def test_projector_checkpoint_valid_state_loads_and_same_checkpoint_masks_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    model = _StatefulModel(-3.0)
+    projector = _StatefulProjector(1.5)
+    _run_evaluation_script(monkeypatch, _script_config(tmp_path, checkpoint_path), model, projector)
+
+    assert model.weight.item() == pytest.approx(2.0)
+    assert projector.alpha.item() == pytest.approx(0.75)
+    assert (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+    assert (tmp_path / "eval" / "toy" / "projector_off.json").exists()
+
+    image = torch.tensor([-1.0, 0.0, 1.0]).reshape(1, 1, 1, 3).repeat(1, 3, 1, 1)
+    evaluator = Evaluator(model, projector, {})
+    on = evaluator.predict_batch({"image": image}, projector_on=True)
+    off = evaluator.predict_batch({"image": image}, projector_on=False)
+    assert torch.allclose(on["alpha_hat"], torch.full_like(on["alpha_hat"], 0.75))
+    assert torch.equal(off["alpha_hat"], torch.ones_like(off["alpha_hat"]))
+    assert torch.equal(on["preds"], off["preds"])
+    assert not torch.allclose(on["probs"], off["probs"])
+
+
+@pytest.mark.parametrize(
+    "case, projector_state, include_projector, error",
+    [
+        ("missing", None, False, "key is missing"),
+        ("null", None, True, "projector_state_dict is None"),
+        ("missing_parameter", {}, True, "Missing key"),
+        ("unexpected_parameter", {"alpha": torch.tensor(0.75), "extra": torch.tensor(1.0)}, True, "Unexpected key"),
+        ("wrong_shape", {"alpha": torch.ones(2)}, True, "size mismatch"),
+    ],
+)
+def test_projector_checkpoint_invalid_state_fails_before_result_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    projector_state: object,
+    include_projector: bool,
+    error: str,
+) -> None:
+    checkpoint_path = tmp_path / f"{case}.pt"
+    _save_test_checkpoint(checkpoint_path, projector_state, include_projector)
+    with pytest.raises(ValueError, match=error) as exc:
+        _run_evaluation_script(
+            monkeypatch, _script_config(tmp_path, checkpoint_path), _StatefulModel(-3.0), _StatefulProjector(1.5)
+        )
+    assert "Projector-on CRISP evaluation" in str(exc.value)
+    assert str(checkpoint_path) in str(exc.value)
+    assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+    assert not (tmp_path / "eval" / "summary.json").exists()
+
+
+def test_projector_checkpoint_requires_module_when_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    with pytest.raises(ValueError, match="requires a projector module"):
+        _run_evaluation_script(monkeypatch, _script_config(tmp_path, checkpoint_path), _StatefulModel(-3.0), None)
+    assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+
+
+def test_baseline_checkpoint_without_projector_remains_evaluable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "baseline.pt"
+    _save_test_checkpoint(checkpoint_path, include_projector=False)
+    _run_evaluation_script(
+        monkeypatch, _script_config(tmp_path, checkpoint_path, use_projector=False), _StatefulModel(-3.0), None
+    )
+    assert (tmp_path / "eval" / "toy" / "projector_off.json").exists()
+    assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+
+
+def test_projector_off_uses_valid_crisp_checkpoint_without_applying_alpha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    config = _script_config(tmp_path, checkpoint_path)
+    config["projector_off_only"] = True
+    model = _StatefulModel(-3.0)
+    projector = _StatefulProjector(1.5)
+    _run_evaluation_script(monkeypatch, config, model, projector)
+    assert projector.alpha.item() == pytest.approx(0.75)
+    assert (tmp_path / "eval" / "toy" / "projector_off.json").exists()
+    assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+
+
+def test_projector_off_does_not_accept_incomplete_crisp_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "incomplete.pt"
+    _save_test_checkpoint(checkpoint_path, include_projector=False)
+    config = _script_config(tmp_path, checkpoint_path)
+    config["projector_off_only"] = True
+    with pytest.raises(ValueError, match="projector_state_dict.*missing"):
+        _run_evaluation_script(monkeypatch, config, _StatefulModel(-3.0), _StatefulProjector(1.5))
+    assert not (tmp_path / "eval" / "toy" / "projector_off.json").exists()
 
 
 def test_projector_off_sets_alpha_one_and_preserves_logits() -> None:

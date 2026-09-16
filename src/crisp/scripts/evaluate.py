@@ -29,7 +29,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.data.datasets import discover_local_test_datasets
-from crisp.engine.checkpointing import load_checkpoint
+from crisp.engine.checkpointing import load_checkpoint, load_required_projector_state
 from crisp.engine.evaluator import Evaluator
 from crisp.registry import (
     build_dataset,
@@ -122,10 +122,11 @@ def main(cfg: DictConfig) -> None:
             "Missing required `checkpoint` in config. Provide it via Hydra override, e.g. "
             "`checkpoint=/path/to/best.pt`."
         )
-    ckpt = load_checkpoint(resolve_path(str(checkpoint_path)))
+    resolved_checkpoint_path = resolve_path(str(checkpoint_path))
+    ckpt = load_checkpoint(resolved_checkpoint_path)
     model.load_state_dict(ckpt["model_state_dict"])
-    if projector is not None and ckpt.get("projector_state_dict") is not None:
-        projector.load_state_dict(ckpt["projector_state_dict"])
+    if method_cfg.get("use_projector", False):
+        load_required_projector_state(projector, ckpt, resolved_checkpoint_path)
 
     # Evaluate on each target dataset.
     evaluator = Evaluator(model, projector, config)
