@@ -7,7 +7,6 @@ This module handles:
 - dataset-level metric aggregation,
 - prediction export and reproducibility metadata capture.
 
-CRISP reference: instruct.md §14, §16.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ import torch.nn as nn
 
 from crisp.metrics.aggregation import average_metric_dicts
 from crisp.metrics.calibration import (
+    DEFAULT_BOUNDARY_SUPPORT_PERCENT,
     boundary_area_weighted_ece,
     boundary_brier_score,
     boundary_expected_calibration_error,
@@ -71,8 +71,9 @@ class Evaluator:
         bnd_cfg = crisp_cfg.get("boundary", {})
         self.sigma_b = bnd_cfg.get("sigma_b", 6.0)
         self.boundary_mode = bnd_cfg.get("mode", "gaussian_soft_field")
-        self.top_percent = float(config.get("eval", {}).get("boundary_support", {}).get("top_percent", 20.0)) \
-            if isinstance(config.get("eval", {}), dict) else 20.0
+        self.bece_top_percent = float(config.get("eval", {}).get("boundary_support", {}).get(
+            "top_percent", DEFAULT_BOUNDARY_SUPPORT_PERCENT,
+        )) if isinstance(config.get("eval", {}), dict) else DEFAULT_BOUNDARY_SUPPORT_PERCENT
         self.ece_bins = int(config.get("eval", {}).get("ece", {}).get("bins", 15)) \
             if isinstance(config.get("eval", {}), dict) else 15
         self.tace_threshold = float(config.get("eval", {}).get("tace", {}).get("threshold", 1.0e-3)) \
@@ -105,12 +106,8 @@ class Evaluator:
             Dictionary containing logits, probabilities, predictions,
             and any optional diagnostic tensors.
 
-        CRISP reference
-        ---------------
-        instruct.md §14:
-          - Inference = student backbone + projector only, no teachers/solver.
-          - Projector-off: α̂ = 1; projector-on: use learned projector.
-          - Binary: ŷ(u) = 1{p̃(u) > 0.5}.
+        Inference uses the student and optional projector, without teachers or
+        a solver. Projector-off sets α̂ = 1; the mask uses p̃ >= 0.5.
         """
         images = batch["image"].to(self.device)
 
@@ -206,21 +203,21 @@ class Evaluator:
                 masks_all,
                 wb_all,
                 n_bins=self.ece_bins,
-                top_percent=self.top_percent,
+                top_percent=self.bece_top_percent,
             ).item(),
             "ba_ece": boundary_area_weighted_ece(
                 probs_all,
                 masks_all,
                 wb_all,
                 n_bins=self.ece_bins,
-                top_percent=self.top_percent,
+                top_percent=self.bece_top_percent,
             ).item(),
             "off_bece": off_boundary_expected_calibration_error(
                 probs_all,
                 masks_all,
                 wb_all,
                 n_bins=self.ece_bins,
-                top_percent=self.top_percent,
+                top_percent=self.bece_top_percent,
             ).item(),
             "tace": thresholded_adaptive_calibration_error(
                 probs_all,
@@ -229,17 +226,13 @@ class Evaluator:
             ).item(),
             "brier": brier_score(probs_all, masks_all).item(),
             "nll": negative_log_likelihood(probs_all, masks_all).item(),
-            "boundary_brier": boundary_brier_score(
-                probs_all, masks_all, wb_all, top_percent=self.top_percent,
-            ).item(),
-            "boundary_nll": boundary_negative_log_likelihood(
-                probs_all, masks_all, wb_all, top_percent=self.top_percent,
-            ).item(),
+            "boundary_brier": boundary_brier_score(probs_all, masks_all, wb_all).item(),
+            "boundary_nll": boundary_negative_log_likelihood(probs_all, masks_all, wb_all).item(),
         }
 
         avg = average_metric_dicts(geometry_metrics)
         avg.update(calibration_metrics)
-        # Thesis/export aliases. Keep canonical snake_case keys for code paths
+        # Table/export aliases. Keep canonical snake_case keys for code paths
         # such as checkpoint selection, while exposing table-ready metric names.
         avg.update({
             "mDice": avg["dice"],

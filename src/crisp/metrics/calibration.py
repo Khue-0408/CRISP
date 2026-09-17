@@ -1,22 +1,13 @@
-"""
-Calibration metrics for dense prediction.
-
-The paper reports:
-- ECE with 15 equal-width bins,
-- boundary-ECE on top boundary-support pixels,
-- BA-ECE,
-- TACE,
-- Brier score,
-- NLL. [file:1]
-
-CRISP reference: instruct.md §16.
-"""
+"""Calibration metrics for dense prediction."""
 
 from __future__ import annotations
 
 from typing import Dict, Tuple
 
 import torch
+
+
+DEFAULT_BOUNDARY_SUPPORT_PERCENT = 20.0
 
 
 def expected_calibration_error(
@@ -41,9 +32,6 @@ def expected_calibration_error(
     torch.Tensor
         Scalar ECE value.
 
-    CRISP reference
-    ---------------
-    instruct.md §16: Standard ECE uses 15 equal-width bins.
     """
     p = probs.detach().reshape(-1).float()
     y = labels.detach().reshape(-1).float()
@@ -74,10 +62,10 @@ def expected_calibration_error(
 
 def boundary_support_mask(
     boundary_weight: torch.Tensor,
-    top_percent: float = 20.0,
+    top_percent: float = DEFAULT_BOUNDARY_SUPPORT_PERCENT,
 ) -> torch.Tensor:
     """
-    Build the per-image boundary support mask used for bECE and BA-ECE.
+    Build the per-image support for boundary calibration metrics.
 
     Parameters
     ----------
@@ -91,9 +79,6 @@ def boundary_support_mask(
     torch.Tensor
         Binary support mask [B, 1, H, W] selecting boundary-focused pixels.
 
-    CRISP reference
-    ---------------
-    instruct.md §16: bECE restricts evaluation to the top 20% highest-wb pixels.
     """
     if not (0.0 < top_percent <= 100.0):
         raise ValueError(f"top_percent must be in (0, 100], got {top_percent}.")
@@ -114,15 +99,11 @@ def boundary_expected_calibration_error(
     labels: torch.Tensor,
     boundary_weight: torch.Tensor,
     n_bins: int = 15,
-    top_percent: float = 20.0,
+    top_percent: float = DEFAULT_BOUNDARY_SUPPORT_PERCENT,
 ) -> torch.Tensor:
     """
     Compute boundary-ECE restricted to the top boundary-support pixels.
 
-    CRISP reference
-    ---------------
-    instruct.md §16: bECE restricts evaluation to top 20% highest-wb pixels
-    and aggregates globally.
     """
     support = boundary_support_mask(boundary_weight, top_percent)
     mask_flat = support.reshape(-1).bool()
@@ -143,7 +124,7 @@ def boundary_area_weighted_ece(
     labels: torch.Tensor,
     boundary_weight: torch.Tensor,
     n_bins: int = 15,
-    top_percent: float = 20.0,
+    top_percent: float = DEFAULT_BOUNDARY_SUPPORT_PERCENT,
 ) -> torch.Tensor:
     """
     Compute boundary-area weighted ECE (BA-ECE).
@@ -151,9 +132,6 @@ def boundary_area_weighted_ece(
     Uses the same boundary support as bECE but reweights each bin by the
     local boundary mass (sum of w_b values in that bin) instead of raw count.
 
-    CRISP reference
-    ---------------
-    instruct.md §16: BA-ECE uses same support but reweights bins by local boundary mass.
     """
     support = boundary_support_mask(boundary_weight, top_percent)
     mask_flat = support.reshape(-1).bool()
@@ -198,7 +176,7 @@ def off_boundary_expected_calibration_error(
     labels: torch.Tensor,
     boundary_weight: torch.Tensor,
     n_bins: int = 15,
-    top_percent: float = 20.0,
+    top_percent: float = DEFAULT_BOUNDARY_SUPPORT_PERCENT,
 ) -> torch.Tensor:
     """
     Compute an off-boundary diagnostic ECE.
@@ -207,10 +185,6 @@ def off_boundary_expected_calibration_error(
     boundary support mask. It is useful for debugging the intended localization
     behavior of CRISP.
 
-    CRISP reference
-    ---------------
-    instruct.md §16 emphasizes boundary-local calibration; this diagnostic verifies
-    calibration does not degrade away from the boundary support.
     """
     support = boundary_support_mask(boundary_weight, top_percent)
     off = (~support.bool()).reshape(-1)
@@ -232,9 +206,6 @@ def thresholded_adaptive_calibration_error(
     Ignores near-zero-confidence predictions and uses adaptive (equal-count)
     binning on the remaining predictions.
 
-    CRISP reference
-    ---------------
-    instruct.md §16: TACE uses thresholded confidence bins over non-background predictions.
     """
     p = probs.detach().reshape(-1).float()
     y = labels.detach().reshape(-1).float()
@@ -297,10 +268,11 @@ def boundary_brier_score(
     probs: torch.Tensor,
     labels: torch.Tensor,
     boundary_weight: torch.Tensor,
-    top_percent: float = 20.0,
 ) -> torch.Tensor:
-    """Score foreground probabilities on the same per-image support as bECE."""
-    support = boundary_support_mask(boundary_weight, top_percent).reshape(-1).bool()
+    """Score foreground probabilities on the fixed default boundary support."""
+    support = boundary_support_mask(
+        boundary_weight, DEFAULT_BOUNDARY_SUPPORT_PERCENT,
+    ).reshape(-1).bool()
     return brier_score(probs.reshape(-1)[support], labels.reshape(-1)[support])
 
 
@@ -308,8 +280,9 @@ def boundary_negative_log_likelihood(
     probs: torch.Tensor,
     labels: torch.Tensor,
     boundary_weight: torch.Tensor,
-    top_percent: float = 20.0,
 ) -> torch.Tensor:
-    """Apply the global binary NLL formula only to bECE-support observations."""
-    support = boundary_support_mask(boundary_weight, top_percent).reshape(-1).bool()
+    """Apply global binary NLL only to fixed default boundary observations."""
+    support = boundary_support_mask(
+        boundary_weight, DEFAULT_BOUNDARY_SUPPORT_PERCENT,
+    ).reshape(-1).bool()
     return negative_log_likelihood(probs.reshape(-1)[support], labels.reshape(-1)[support])

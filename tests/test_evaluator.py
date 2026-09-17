@@ -7,6 +7,7 @@ These tests protect against method drift in the inference protocol:
 - no teachers/solver are invoked during inference.
 """
 
+import math
 import runpy
 import sys
 from pathlib import Path
@@ -16,7 +17,9 @@ import pytest
 import torch
 import torch.nn as nn
 
+import crisp.engine.evaluator as evaluator_module
 from crisp.engine.evaluator import Evaluator
+from crisp.metrics.calibration import boundary_support_mask
 from crisp.models.base import SegmentationOutput
 
 
@@ -333,3 +336,34 @@ def test_boundary_proper_scores_are_invariant_to_dataloader_batch_splitting() ->
     )
     for key in ("boundary_nll", "boundary_brier", "nll", "brier", "ece", "bece"):
         assert one_batch[key] == pytest.approx(split_batches[key], abs=1e-7)
+
+
+def test_bece_support_sensitivity_does_not_change_boundary_proper_scores(monkeypatch) -> None:
+    class ImageLogits(nn.Module):
+        def forward(self, images: torch.Tensor) -> SegmentationOutput:
+            logits = images[:, :1]
+            return SegmentationOutput(logits=logits, features=logits)
+
+    probs = torch.full((1, 1, 2, 5), 0.1)
+    probs.reshape(-1)[0] = 0.9
+    probs.reshape(-1)[-1] = 0.9
+    labels = torch.zeros_like(probs)
+    labels.reshape(-1)[0] = 1.0
+    wb = torch.arange(10, dtype=torch.float32).reshape_as(probs)
+    assert boundary_support_mask(wb).reshape(-1).nonzero().reshape(-1).tolist() == [8, 9]
+    monkeypatch.setattr(evaluator_module, "compute_boundary_weight", lambda *_args, **_kwargs: wb)
+    batch = {"image": torch.logit(probs).repeat(1, 3, 1, 1), "mask": labels}
+
+    def evaluate(top_percent: float) -> dict[str, float]:
+        config = {"eval": {"boundary_support": {"top_percent": top_percent}}}
+        return Evaluator(ImageLogits(), None, config).evaluate_dataset(
+            [batch], "toy", projector_on=False,
+        )
+
+    at_10, at_20, at_30 = (evaluate(value) for value in (10.0, 20.0, 30.0))
+    assert at_10["bece"] != pytest.approx(at_30["bece"])
+    for result in (at_10, at_20, at_30):
+        assert result["boundary_nll"] == pytest.approx((-math.log(0.9) - math.log(0.1)) / 2)
+        assert result["boundary_brier"] == pytest.approx(0.41)
+    for key in ("boundary_nll", "boundary_brier", "ece", "nll", "brier"):
+        assert at_10[key] == pytest.approx(at_30[key])

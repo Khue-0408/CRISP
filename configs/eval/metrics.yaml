@@ -26,6 +26,7 @@ ece:
   bins: 15
 
 boundary_support:
+  # bECE sensitivity; boundary NLL/Brier use the fixed canonical 20% support.
   top_percent: 20
 
 tace:
