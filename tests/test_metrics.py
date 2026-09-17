@@ -2,16 +2,21 @@
 Unit tests for segmentation and calibration metrics.
 """
 
+import math
+
 import pytest
 import torch
 import torch.nn as nn
 from scipy.ndimage import binary_erosion, distance_transform_edt
 
+import crisp.metrics.calibration as calibration_module
 from crisp.engine.evaluator import Evaluator
 from crisp.metrics.calibration import (
     brier_score,
     boundary_area_weighted_ece,
+    boundary_brier_score,
     boundary_expected_calibration_error,
+    boundary_negative_log_likelihood,
     expected_calibration_error,
     negative_log_likelihood,
     boundary_support_mask,
@@ -148,6 +153,94 @@ def test_nll_non_negative() -> None:
     labels = (torch.rand(1, 1, 16, 16) > 0.5).float()
     nll = negative_log_likelihood(probs, labels)
     assert nll.item() >= 0.0
+
+
+def test_boundary_proper_scores_match_manual_selected_pixel_values() -> None:
+    probs = torch.tensor([0.1, 0.8, 0.1, 0.3, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]).reshape(1, 1, 1, 10)
+    labels = torch.tensor([0, 1, 0, 1, 0, 0, 0, 0, 0, 0]).reshape_as(probs)
+    wb = torch.tensor([0, 9, 1, 8, 2, 3, 4, 5, 6, 7]).reshape_as(probs)
+    assert boundary_support_mask(wb).reshape(-1).nonzero().reshape(-1).tolist() == [1, 3]
+    expected_nll = (-math.log(0.8) - math.log(0.3)) / 2
+    expected_brier = ((0.8 - 1) ** 2 + (0.3 - 1) ** 2) / 2
+    assert boundary_negative_log_likelihood(probs, labels, wb).item() == pytest.approx(expected_nll)
+    assert boundary_brier_score(probs, labels, wb).item() == pytest.approx(expected_brier)
+
+    changed = probs.clone()
+    changed.reshape(-1)[0] = 0.99  # Off support; global scores change, boundary scores do not.
+    assert boundary_negative_log_likelihood(changed, labels, wb).item() == pytest.approx(expected_nll)
+    assert boundary_brier_score(changed, labels, wb).item() == pytest.approx(expected_brier)
+    assert negative_log_likelihood(changed, labels) > negative_log_likelihood(probs, labels)
+    assert brier_score(changed, labels) > brier_score(probs, labels)
+
+
+def test_boundary_proper_scores_use_identical_bece_support_with_ties(monkeypatch) -> None:
+    wb = torch.tensor([9.0, 8.0, 8.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0]).reshape(1, 1, 1, 10)
+    probs = torch.linspace(0.1, 0.9, 10).reshape_as(wb)
+    labels = torch.zeros_like(probs)
+    masks = []
+    original = calibration_module.boundary_support_mask
+
+    def record_support(weight, top_percent=20.0):
+        support = original(weight, top_percent)
+        masks.append(support.clone())
+        return support
+
+    monkeypatch.setattr(calibration_module, "boundary_support_mask", record_support)
+    boundary_expected_calibration_error(probs, labels, wb)
+    boundary_negative_log_likelihood(probs, labels, wb)
+    boundary_brier_score(probs, labels, wb)
+    assert len(masks) == 3
+    assert torch.equal(masks[0], masks[1]) and torch.equal(masks[1], masks[2])
+    assert masks[0].reshape(-1).nonzero().reshape(-1).tolist() == [0, 1]
+
+
+def test_boundary_proper_scores_select_top_pixels_per_image_and_pool_them() -> None:
+    wb = torch.stack((torch.arange(10), torch.arange(100, 110))).reshape(2, 1, 1, 10)
+    probs = torch.full_like(wb, 0.5, dtype=torch.float32)
+    probs[0, :, :, 8:] = 0.9
+    probs[1, :, :, 8:] = 0.1
+    labels = torch.ones_like(probs)
+    support = boundary_support_mask(wb)
+    assert support.reshape(2, -1).sum(dim=1).tolist() == [2.0, 2.0]
+    assert boundary_brier_score(probs, labels, wb).item() == pytest.approx(0.41)
+    assert boundary_negative_log_likelihood(probs, labels, wb).item() == pytest.approx(
+        (-math.log(0.9) - math.log(0.1)) / 2
+    )
+
+
+def test_boundary_proper_scores_preserve_global_conventions_and_minimal_support() -> None:
+    probs = torch.tensor([0.1, 0.9]).reshape(1, 1, 1, 2)
+    labels = torch.tensor([0.0, 1.0]).reshape_as(probs)
+    wb = torch.tensor([1.0, 0.0]).reshape_as(probs)
+    assert expected_calibration_error(probs, labels).item() == pytest.approx(0.1)
+    assert brier_score(probs, labels).item() == pytest.approx(0.01)
+    assert negative_log_likelihood(probs, labels).item() == pytest.approx(-math.log(0.9))
+    assert int(boundary_support_mask(wb).sum().item()) == 1
+    assert boundary_brier_score(probs, labels, wb).item() == pytest.approx(0.01)
+    assert boundary_negative_log_likelihood(probs, labels, wb).item() == pytest.approx(-math.log(0.9))
+
+    perfect = torch.tensor([0.001, 0.999]).reshape(1, 1, 1, 2)
+    truth = torch.tensor([0.0, 1.0]).reshape_as(perfect)
+    assert boundary_brier_score(perfect, truth, wb).item() == pytest.approx(1e-6)
+    assert boundary_negative_log_likelihood(perfect, truth, wb).item() == pytest.approx(
+        -math.log(0.999), abs=1e-7,
+    )
+    assert boundary_negative_log_likelihood(perfect, truth, wb).item() < 0.002
+
+    saturated = torch.tensor([0.0, 1.0]).reshape_as(probs)
+    wrong = torch.tensor([1.0, 0.0]).reshape_as(probs)
+    assert boundary_negative_log_likelihood(saturated, wrong, wb).item() == pytest.approx(
+        -math.log(1e-6), abs=1e-5,
+    )
+
+
+def test_boundary_proper_scores_can_exceed_global_scores() -> None:
+    probs = torch.full((1, 1, 1, 10), 0.01)
+    labels = torch.zeros_like(probs)
+    probs.reshape(-1)[-2:] = 0.99  # Wrong, high-confidence boundary predictions.
+    wb = torch.arange(10).reshape_as(probs)
+    assert boundary_brier_score(probs, labels, wb) > brier_score(probs, labels)
+    assert boundary_negative_log_likelihood(probs, labels, wb) > negative_log_likelihood(probs, labels)
 
 
 def test_dice_score_perfect() -> None:

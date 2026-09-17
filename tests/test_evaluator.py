@@ -302,3 +302,34 @@ def test_metric_export_contains_thesis_aliases() -> None:
     assert metrics["HD95"] == metrics["hd95"]
     assert metrics["bECE"] == metrics["bece"]
     assert metrics["off-bECE"] == metrics["off_bece"]
+    assert "boundary_nll" in metrics
+    assert "boundary_brier" in metrics
+
+
+def test_boundary_proper_scores_are_invariant_to_dataloader_batch_splitting() -> None:
+    class ImageLogits(nn.Module):
+        def forward(self, images: torch.Tensor) -> SegmentationOutput:
+            logits = images[:, :1]
+            return SegmentationOutput(logits=logits, features=logits)
+
+    logits = torch.linspace(-2.0, 2.0, 3 * 16 * 16).reshape(3, 1, 16, 16)
+    images = logits.repeat(1, 3, 1, 1)
+    masks = torch.zeros_like(logits)
+    masks[0, :, 3:10, 4:11] = 1
+    masks[1, :, 6:15, 2:12] = 1
+    masks[2, :, 1:8, 8:15] = 1
+    evaluator = Evaluator(ImageLogits(), None, {})
+
+    one_batch = evaluator.evaluate_dataset(
+        [{"image": images, "mask": masks}], "toy", projector_on=False,
+    )
+    split_batches = evaluator.evaluate_dataset(
+        [
+            {"image": images[:1], "mask": masks[:1]},
+            {"image": images[1:], "mask": masks[1:]},
+        ],
+        "toy",
+        projector_on=False,
+    )
+    for key in ("boundary_nll", "boundary_brier", "nll", "brier", "ece", "bece"):
+        assert one_batch[key] == pytest.approx(split_batches[key], abs=1e-7)

@@ -21,7 +21,9 @@ import torch.nn as nn
 from crisp.metrics.aggregation import average_metric_dicts
 from crisp.metrics.calibration import (
     boundary_area_weighted_ece,
+    boundary_brier_score,
     boundary_expected_calibration_error,
+    boundary_negative_log_likelihood,
     brier_score,
     expected_calibration_error,
     negative_log_likelihood,
@@ -227,6 +229,12 @@ class Evaluator:
             ).item(),
             "brier": brier_score(probs_all, masks_all).item(),
             "nll": negative_log_likelihood(probs_all, masks_all).item(),
+            "boundary_brier": boundary_brier_score(
+                probs_all, masks_all, wb_all, top_percent=self.top_percent,
+            ).item(),
+            "boundary_nll": boundary_negative_log_likelihood(
+                probs_all, masks_all, wb_all, top_percent=self.top_percent,
+            ).item(),
         }
 
         avg = average_metric_dicts(geometry_metrics)

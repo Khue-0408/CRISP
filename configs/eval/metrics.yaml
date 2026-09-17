@@ -12,6 +12,8 @@ calibration_metrics:
   - tace
   - brier
   - nll
+  - boundary_brier
+  - boundary_nll
 
 flagship_table_metrics:
   - mDice

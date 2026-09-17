@@ -291,3 +291,25 @@ def negative_log_likelihood(
     y = labels.float()
     nll = -(y * p.log() + (1.0 - y) * (1.0 - p).log())
     return nll.mean()
+
+
+def boundary_brier_score(
+    probs: torch.Tensor,
+    labels: torch.Tensor,
+    boundary_weight: torch.Tensor,
+    top_percent: float = 20.0,
+) -> torch.Tensor:
+    """Score foreground probabilities on the same per-image support as bECE."""
+    support = boundary_support_mask(boundary_weight, top_percent).reshape(-1).bool()
+    return brier_score(probs.reshape(-1)[support], labels.reshape(-1)[support])
+
+
+def boundary_negative_log_likelihood(
+    probs: torch.Tensor,
+    labels: torch.Tensor,
+    boundary_weight: torch.Tensor,
+    top_percent: float = 20.0,
+) -> torch.Tensor:
+    """Apply the global binary NLL formula only to bECE-support observations."""
+    support = boundary_support_mask(boundary_weight, top_percent).reshape(-1).bool()
+    return negative_log_likelihood(probs.reshape(-1)[support], labels.reshape(-1)[support])
