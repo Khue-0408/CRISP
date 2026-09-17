@@ -20,6 +20,7 @@ from crisp.utils.provenance import (
     git_state,
     run_provenance,
     source_split_provenance,
+    student_initialization_provenance,
     teacher_provenance,
     write_provenance,
 )
@@ -100,9 +101,88 @@ def test_teacher_hash_only_when_file_exists(tmp_path: Path) -> None:
     assert all(record["training_exposure"] is None for record in records)
 
 
-def test_checkpoint_links_to_exact_run_fields(tmp_path: Path) -> None:
-    run = run_provenance(_config(tmp_path), git=_git(), run_id="run-test")
+def test_same_initialization_path_changed_bytes_changes_scientific_identity(tmp_path: Path) -> None:
+    path = tmp_path / "student.pt"
+    path.write_bytes(b"initial weights A")
     config = _config(tmp_path)
+    config["student_init"] = {
+        "checkpoint": str(path), "strict": True,
+        "state_dict_keys": ["model_state_dict"], "prefixes_to_strip": ["module."],
+        "download": {"enabled": False},
+    }
+    first = run_provenance(config, git=_git())
+    repeated = run_provenance(config, git=_git())
+    assert first["config_sha256"] == repeated["config_sha256"]
+    assert first["scientific_identity_sha256"] == repeated["scientific_identity_sha256"]
+    assert first["run_id"] != repeated["run_id"]
+    path.write_bytes(b"initial weights B")
+    changed = run_provenance(config, git=_git())
+    assert changed["config_sha256"] == first["config_sha256"]
+    assert changed["student_initialization"]["checkpoint_sha256"] != first["student_initialization"]["checkpoint_sha256"]
+    assert changed["scientific_identity_sha256"] != first["scientific_identity_sha256"]
+    assert changed["student_initialization"]["strict"] is True
+    assert changed["student_initialization"]["state_dict_keys"] == ["model_state_dict"]
+    assert changed["student_initialization"]["prefixes_to_strip"] == ["module."]
+    assert changed["student_initialization"]["download"] == {"enabled": False}
+
+
+def test_same_initialization_bytes_at_other_path_keep_artifact_sha(tmp_path: Path) -> None:
+    first_path = tmp_path / "first.pt"
+    second_path = tmp_path / "second.pt"
+    first_path.write_bytes(b"identical initialization")
+    second_path.write_bytes(first_path.read_bytes())
+    first_config = {**_config(tmp_path), "student_init": {"checkpoint": str(first_path)}}
+    second_config = {**_config(tmp_path), "student_init": {"checkpoint": str(second_path)}}
+    first = run_provenance(first_config, git=_git())
+    second = run_provenance(second_config, git=_git())
+    assert first["student_initialization"]["checkpoint_sha256"] == second["student_initialization"]["checkpoint_sha256"]
+    assert first["external_artifact_identity"] == second["external_artifact_identity"]
+    assert first["config_sha256"] != second["config_sha256"]
+
+
+def test_no_initialization_and_missing_file_states_are_explicit(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    absent = student_initialization_provenance(config)
+    assert absent["artifact_status"] == "none"
+    assert absent["checkpoint_sha256"] is None
+    config["student_init"] = {"checkpoint": str(tmp_path / "missing.pt")}
+    missing = student_initialization_provenance(config)
+    assert missing["artifact_status"] == "missing"
+    assert missing["checkpoint_sha256"] is None
+
+
+def test_teacher_and_manifest_bytes_enter_external_artifact_identity(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    teacher = tmp_path / "teacher.pt"
+    teacher.write_bytes(b"teacher A")
+    config["teacher_pool"] = {"teachers": [{"name": "teacher", "model": "tiny", "checkpoint": str(teacher)}]}
+    config["source_data"] = {"source_split": {"mode": "manifest"}}
+    actual = {
+        "mode": "manifest", "train_manifest": "train.txt", "val_manifest": "val.txt",
+        "train_sha256": "a" * 64, "val_sha256": "b" * 64, "counts": {},
+    }
+    dataset = type("Dataset", (), {"source_split_provenance": actual})()
+    first = run_provenance(config, train_dataset=dataset, git=_git())
+    assert first["external_artifact_identity"]["teacher_checkpoints"] == [
+        {"name": "teacher", "sha256": file_sha256(teacher)}
+    ]
+    assert first["external_artifact_identity"]["source_manifests"] == {
+        "train_sha256": "a" * 64, "val_sha256": "b" * 64,
+    }
+    teacher.write_bytes(b"teacher B")
+    changed_teacher = run_provenance(config, train_dataset=dataset, git=_git())
+    assert changed_teacher["scientific_identity_sha256"] != first["scientific_identity_sha256"]
+    actual["train_sha256"] = "c" * 64
+    changed_manifest = run_provenance(config, train_dataset=dataset, git=_git())
+    assert changed_manifest["scientific_identity_sha256"] != changed_teacher["scientific_identity_sha256"]
+
+
+def test_checkpoint_links_to_exact_run_fields(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    init_path = tmp_path / "init.pt"
+    init_path.write_bytes(b"student state")
+    config["student_init"] = {"checkpoint": str(init_path)}
+    run = run_provenance(config, git=_git(), run_id="run-test")
     trainer = Trainer(nn.Linear(1, 1), None, None, config, run_record=run)
     trainer._optimizer = trainer.build_optimizer()
     trainer._scheduler = None
@@ -115,6 +195,7 @@ def test_checkpoint_links_to_exact_run_fields(tmp_path: Path) -> None:
     assert checkpoint["epoch"] == 7
     assert payload["seed"] == checkpoint["seed"]
     assert payload["config"] == run["resolved_config"]
+    assert checkpoint["student_initialization"] == run["student_initialization"]
 
 
 def _evaluation_fixture(tmp_path: Path):

@@ -121,6 +121,42 @@ def teacher_provenance(config: Mapping[str, Any]) -> list[dict[str, Any]]:
     return teachers
 
 
+def student_initialization_provenance(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Identify the optional external checkpoint by its actual file bytes."""
+    init = config.get("student_init") or {}
+    checkpoint = init.get("checkpoint")
+    configured = str(checkpoint).strip() if checkpoint is not None else None
+    path = resolve_path(configured) if configured else None
+    exists = bool(path and path.is_file())
+    return {
+        "configured_checkpoint": checkpoint,
+        "resolved_path": str(path) if path else None,
+        "artifact_status": "available" if exists else "missing" if configured else "none",
+        "checkpoint_sha256": file_sha256(path) if exists else None,
+        "strict": bool(init.get("strict", True)),
+        "state_dict_keys": init.get("state_dict_keys"),
+        "prefixes_to_strip": init.get("prefixes_to_strip"),
+        "download": init.get("download"),
+    }
+
+
+def external_artifact_identity(
+    student_init: Mapping[str, Any], teachers: list[dict[str, Any]], split: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Keep byte-level dependencies separate from paths already in the config hash."""
+    return {
+        "student_initialization_sha256": student_init["checkpoint_sha256"],
+        "teacher_checkpoints": [
+            {"name": teacher["name"], "sha256": teacher["checkpoint_sha256"]}
+            for teacher in teachers
+        ],
+        "source_manifests": (
+            {"train_sha256": split["train_sha256"], "val_sha256": split["val_sha256"]}
+            if split.get("mode") == "manifest" else None
+        ),
+    }
+
+
 def run_provenance(
     config: Mapping[str, Any], *, train_dataset: Any = None,
     git: Mapping[str, Any] | None = None, run_id: str | None = None,
@@ -132,7 +168,14 @@ def run_provenance(
     config_hash = content_sha256(resolved)
     experiment = resolved.get("experiment_name")
     seed = int(resolved.get("seed", 0))
-    identity = {"experiment": experiment, "seed": seed, "config_sha256": config_hash, "git_sha": git_info.get("sha")}
+    split = source_split_provenance(resolved, train_dataset)
+    teachers = teacher_provenance(resolved)
+    student_init = student_initialization_provenance(resolved)
+    artifacts = external_artifact_identity(student_init, teachers, split)
+    identity = {
+        "experiment": experiment, "seed": seed, "config_sha256": config_hash,
+        "git_sha": git_info.get("sha"), "external_artifacts": artifacts,
+    }
     # A unique execution suffix prevents a repeated scientific configuration from sharing a run ID.
     identity_hash = content_sha256(identity)[:16]
     return {
@@ -148,8 +191,10 @@ def run_provenance(
         "resolved_config": resolved,
         "config_sha256": config_hash,
         "source_data_role": resolved.get("source_data", {}).get("role"),
-        "source_split": source_split_provenance(resolved, train_dataset),
-        "teachers": teacher_provenance(resolved),
+        "source_split": split,
+        "teachers": teachers,
+        "student_initialization": student_init,
+        "external_artifact_identity": artifacts,
         "environment": {
             "python": platform.python_version(),
             "pytorch": torch.__version__,
@@ -174,6 +219,7 @@ def checkpoint_provenance(run: Mapping[str, Any], epoch: int, selection: Mapping
         "selection": dict(selection),
         "source_split": run["source_split"],
         "teachers": run["teachers"],
+        "student_initialization": run["student_initialization"],
     }
 
 
