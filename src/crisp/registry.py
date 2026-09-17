@@ -191,6 +191,7 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
     BinarySegmentationDataset
         Instantiated dataset object.
     """
+    from crisp.data.datasets import build_manifest_train_val_dataset
     from crisp.data.transforms import build_eval_transforms, build_train_transforms
 
     data_cfg = dict(config.get("source_data", config))
@@ -202,6 +203,11 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
     else:
         transforms = build_eval_transforms(merged_cfg)
 
+    source_split_mode = data_cfg.get("source_split", {}).get("mode")
+    if source_split_mode not in (None, "fraction", "manifest"):
+        raise ValueError(f"Unknown source split mode: {source_split_mode!r}")
+    if split in {"train", "val"} and source_split_mode == "manifest":
+        return build_manifest_train_val_dataset(data_cfg, split, transforms)
     if str(data_cfg.get("mode", "")).lower() == "local_train_test" and split in {"train", "val"}:
         return build_local_train_val_dataset(
             data_cfg=data_cfg,

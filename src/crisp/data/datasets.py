@@ -25,8 +25,14 @@ from torch.utils.data import Dataset
 from crisp.data.io_utils import (
     build_stem_to_path_map,
     candidate_dir_names,
+    list_supported_files,
     read_binary_mask,
     read_rgb_image,
+)
+from crisp.data.source_manifest import (
+    CURRENT_SOURCE_COUNT_PROFILE,
+    read_source_manifest,
+    validate_source_membership,
 )
 from crisp.utils.paths import ensure_dir, resolve_local_data_root, resolve_path
 
@@ -102,6 +108,7 @@ class BinarySegmentationDataset(Dataset):
         """
         self.samples = samples
         self.transforms = transforms
+        self.source_split_provenance: Optional[Dict[str, Any]] = None
 
     def __len__(self) -> int:
         """
@@ -348,6 +355,84 @@ def materialize_deterministic_split_files(
     return {"train": train_file, "val": val_file}
 
 
+def _strict_stem_map(directory: Path) -> Dict[str, Path]:
+    """Require one unambiguous image or mask file per filename stem."""
+    paths: Dict[str, Path] = {}
+    for path in list_supported_files(directory):
+        if path.stem in paths:
+            raise ValueError(f"Duplicate source file stem in {directory}: {path.stem}")
+        paths[path.stem] = path
+    return paths
+
+
+def build_manifest_train_val_dataset(
+    data_cfg: Dict[str, Any], split: str, transforms: Optional[Any]
+) -> BinarySegmentationDataset:
+    """Consume explicit source membership; never derive it from a seed or fraction."""
+    if split not in {"train", "val"}:
+        raise ValueError(f"Source manifest mode does not support split={split!r}.")
+    split_cfg = dict(data_cfg.get("source_split", {}))
+    train_path = split_cfg.get("train_manifest")
+    val_path = split_cfg.get("val_manifest")
+    if not train_path or not val_path:
+        raise ValueError("Source manifest mode requires train_manifest and val_manifest.")
+    train_manifest = read_source_manifest(train_path)
+    val_manifest = read_source_manifest(val_path)
+    sources = split_cfg.get("datasets")
+    if not isinstance(sources, dict) or not sources:
+        raise ValueError("Source manifest mode requires a nonempty datasets mapping.")
+
+    available: Dict[str, SampleRecord] = {}
+    for dataset_name, source_cfg in sources.items():
+        if not isinstance(source_cfg, dict) or not source_cfg.get("root"):
+            raise ValueError(f"Source dataset {dataset_name!r} requires a root.")
+        root = resolve_path(source_cfg["root"])
+        image_dir, mask_dir = resolve_dataset_dirs(
+            root=root,
+            split="train",
+            image_dir=source_cfg.get("image_dir", "images"),
+            mask_dir=source_cfg.get("mask_dir", "masks"),
+            image_dir_candidates=source_cfg.get("image_dir_candidates"),
+            mask_dir_candidates=source_cfg.get("mask_dir_candidates"),
+        )
+        images = _strict_stem_map(image_dir)
+        masks = _strict_stem_map(mask_dir)
+        missing_masks = sorted(images.keys() - masks.keys())
+        missing_images = sorted(masks.keys() - images.keys())
+        if missing_masks or missing_images:
+            raise ValueError(
+                f"Source image/mask pairing mismatch in {dataset_name}: "
+                f"missing masks {missing_masks[:5]}; missing images {missing_images[:5]}"
+            )
+        for stem in images:
+            sample_id = f"{dataset_name}/{stem}"
+            available[sample_id] = SampleRecord(
+                image_path=images[stem], mask_path=masks[stem], image_id=stem,
+                dataset_name=dataset_name, split=split,
+            )
+
+    profile = split_cfg.get("count_profile")
+    if profile not in (None, "current_crisp"):
+        raise ValueError(f"Unknown source count profile: {profile!r}")
+    counts = validate_source_membership(
+        available, train_manifest.ids, val_manifest.ids, sources,
+        expected_counts=CURRENT_SOURCE_COUNT_PROFILE if profile == "current_crisp" else None,
+    )
+    selected = train_manifest if split == "train" else val_manifest
+    dataset = BinarySegmentationDataset(
+        [available[sample_id] for sample_id in selected.ids], transforms=transforms
+    )
+    dataset.source_split_provenance = {
+        "mode": "manifest",
+        "train_manifest": str(train_manifest.path),
+        "val_manifest": str(val_manifest.path),
+        "train_sha256": train_manifest.sha256,
+        "val_sha256": val_manifest.sha256,
+        "counts": counts,
+    }
+    return dataset
+
+
 def build_local_train_val_dataset(
     data_cfg: Dict[str, Any],
     split: str,
@@ -357,8 +442,7 @@ def build_local_train_val_dataset(
     """
     Build the local TrainDataset-based train/val dataset.
 
-    Local mode uses the entire TrainDataset as the source dataset and creates a
-    deterministic train/val split saved under ``metadata/splits``.
+    Legacy fraction mode creates a seed-dependent train/val split cache.
     """
     if split not in {"train", "val"}:
         raise ValueError(f"Local train/val builder does not support split='{split}'.")
