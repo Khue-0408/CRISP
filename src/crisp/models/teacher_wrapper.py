@@ -4,7 +4,6 @@ Teacher model wrappers and ensemble execution helpers.
 Teachers are used only during training to form the boundary-local posterior target.
 At inference, teachers are not used. [file:1]
 
-CRISP reference: instruct.md §4, §13, §14.
 """
 
 from __future__ import annotations
@@ -26,13 +25,9 @@ class FrozenTeacher(nn.Module):
     ----------------
     - load teacher checkpoint,
     - enforce evaluation mode,
-    - expose probability maps rather than raw logits if desired,
+    - expose raw logits or probability maps,
     - ensure gradients are never computed through teacher parameters.
 
-    CRISP reference
-    ---------------
-    instruct.md §4.1: Teachers are frozen during CRISP training.
-    instruct.md §13: Teacher outputs must be detached.
     """
 
     def __init__(
@@ -75,9 +70,9 @@ class FrozenTeacher(nn.Module):
         return super().train(False)
 
     @torch.no_grad()
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Run the frozen teacher and return a foreground probability map.
+        Run the frozen teacher and return its foreground logits.
 
         Parameters
         ----------
@@ -87,7 +82,7 @@ class FrozenTeacher(nn.Module):
         Returns
         -------
         torch.Tensor
-            Foreground probability tensor of shape [B, 1, H, W], detached.
+            Foreground logit tensor of shape [B, 1, H, W], detached.
         """
         out = self.model(x)
         # Support SegmentationOutput, raw tensors, baseline dict outputs, and
@@ -121,8 +116,12 @@ class FrozenTeacher(nn.Module):
                 mode="bilinear",
                 align_corners=False,
             )
-        probs = torch.sigmoid(logits)
-        return probs.detach()
+        return logits.detach()
+
+    @torch.no_grad()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the unchanged foreground-probability interface."""
+        return torch.sigmoid(self.forward_logits(x)).detach()
 
 
 class TeacherEnsemble(nn.Module):
@@ -149,3 +148,8 @@ class TeacherEnsemble(nn.Module):
             All outputs are detached.
         """
         return [teacher(x) for teacher in self.teachers]
+
+    @torch.no_grad()
+    def forward_logits(self, x: torch.Tensor) -> List[torch.Tensor]:
+        """Expose raw logits for opt-in pre-sigmoid robustness corruption."""
+        return [teacher.forward_logits(x) for teacher in self.teachers]

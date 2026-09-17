@@ -43,7 +43,7 @@ from crisp.modules.posterior_target import (
     compute_boundary_posterior_target,
 )
 from crisp.modules.solver import solve_alpha_star
-from crisp.modules.teacher_posterior import aggregate_teacher_posterior
+from crisp.modules.teacher_posterior import aggregate_teacher_posterior, teacher_robustness_posterior
 from crisp.utils.logging import log_metrics
 
 logger = logging.getLogger("crisp")
@@ -198,6 +198,27 @@ class Trainer:
         self.tau = teacher_cfg.get("tau", 1.0)
         self.gamma = teacher_cfg.get("gamma", 1.5)
         self.strict_teacher_requirement = teacher_cfg.get("strict", True)
+        robustness_cfg = teacher_cfg.get("robustness", {})
+        self.teacher_robustness_enabled = bool(robustness_cfg.get("enabled", False))
+        self.teacher_robustness_mode = robustness_cfg.get("aggregation", "weighted")
+        self.teacher_robustness_std = float(robustness_cfg.get("logit_noise_std", 1.0))
+        if self.teacher_robustness_enabled:
+            if not self.use_teachers or self.target_mode != "boundary_posterior":
+                raise ValueError("Teacher robustness requires boundary-posterior teachers.")
+            if [entry.get("name") for entry in config.get("teacher_pool", {}).get("teachers", [])] != [
+                "uacanet_l", "polyp_pvt", "sammamba",
+            ]:
+                raise ValueError("Teacher robustness requires UACANet-L, Polyp-PVT, SAM-Mamba in order.")
+            if teacher_cfg.get("teacher_names") != ["uacanet_l", "polyp_pvt", "sammamba"]:
+                raise ValueError("Teacher robustness names must match its three-teacher pool.")
+            if robustness_cfg.get("degraded_teacher") != "sammamba" \
+                    or robustness_cfg.get("distribution") != "gaussian" \
+                    or robustness_cfg.get("seed_keys") != ["seed", "dataset_name", "image_id"]:
+                raise ValueError("Teacher robustness corruption/identity config is not manuscript-aligned.")
+            if self.teacher_robustness_mode not in {"weighted", "equal_average"}:
+                raise ValueError("Unknown teacher robustness aggregation mode.")
+            if self.teacher_robustness_std != 1.0:
+                raise ValueError("Teacher robustness requires logit-noise std=1.0.")
 
         # Solver config.
         solver_cfg = crisp_cfg.get("solver", {})
@@ -397,14 +418,35 @@ class Trainer:
 
             # 2. Target construction.
             lam = self.lambda_value * float(schedule["lambda_factor"])
+            teacher_diagnostics = None
             if self.target_mode == "boundary_posterior":
                 if self.use_teachers and self.teacher_ensemble is not None:
-                    teacher_probs = self.teacher_ensemble(images)
-                    pT, _ = aggregate_teacher_posterior(
-                        teacher_probs,
-                        tau=self.tau,
-                        gamma=self.gamma,
-                    )
+                    if self.teacher_robustness_enabled:
+                        meta = batch.get("meta", {})
+                        ids = meta.get("image_id")
+                        datasets = meta.get("dataset_name")
+                        if not isinstance(ids, (list, tuple)) or not isinstance(datasets, (list, tuple)) \
+                                or len(ids) != images.shape[0] or len(datasets) != images.shape[0] \
+                                or any(not isinstance(value, str) or not value for value in (*ids, *datasets)):
+                            raise ValueError("Teacher robustness requires stable dataset_name/image_id per image.")
+                        stable_ids = [f"{dataset}/{image_id}" for dataset, image_id in zip(datasets, ids)]
+                        teacher_logits = self.teacher_ensemble.forward_logits(images)
+                        pT, teacher_diagnostics = teacher_robustness_posterior(
+                            teacher_logits,
+                            stable_ids,
+                            self.seed,
+                            mode=self.teacher_robustness_mode,
+                            tau=self.tau,
+                            gamma=self.gamma,
+                            std=self.teacher_robustness_std,
+                        )
+                    else:
+                        teacher_probs = self.teacher_ensemble(images)
+                        pT, _ = aggregate_teacher_posterior(
+                            teacher_probs,
+                            tau=self.tau,
+                            gamma=self.gamma,
+                        )
                 elif self.allow_self_ensemble_teacher:
                     pT = torch.sigmoid(logits.detach())
                 else:
@@ -480,6 +522,10 @@ class Trainer:
                 total_dict = {"loss": task_dict["task_loss"], **task_dict}
 
         logs = {k: v.item() for k, v in total_dict.items() if v.ndim == 0}
+        if teacher_diagnostics is not None:
+            logs["teacher/degraded_mean_weight"] = teacher_diagnostics[
+                "degraded_mean_weight"
+            ].item()
         logs.update({f"solver/{k}": v.item() for k, v in solver_diag.items()})
         logs.update({
             "schedule/phase_id": float(schedule["phase_id"]),

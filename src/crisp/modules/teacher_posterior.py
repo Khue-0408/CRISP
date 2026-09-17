@@ -5,11 +5,11 @@ During training, CRISP uses a teacher set {T_m} whose probability maps are combi
 into a boundary-local teacher posterior p_T(u). The paper instantiates p_T(u)
 through an entropy-and-agreement weighted barycenter. [file:1]
 
-CRISP reference: instruct.md §4.
 """
 
 from __future__ import annotations
 
+import hashlib
 from typing import List, Tuple
 
 import torch
@@ -31,9 +31,6 @@ def binary_entropy(prob: torch.Tensor, eps: float = 1.0e-6) -> torch.Tensor:
     torch.Tensor
         Entropy tensor with the same shape as ``prob``.
 
-    CRISP reference
-    ---------------
-    instruct.md §4.2: H(p) = -p log p - (1-p) log(1-p).
     """
     p = prob.clamp(eps, 1.0 - eps)
     return -(p * p.log() + (1.0 - p) * (1.0 - p).log())
@@ -54,9 +51,6 @@ def compute_teacher_consensus(teacher_probs: List[torch.Tensor]) -> torch.Tensor
     torch.Tensor
         Mean consensus probability map of shape [B, 1, H, W].
 
-    CRISP reference
-    ---------------
-    instruct.md §4.2: p̄(u) = (1/M) Σ_m p_m(u).
     """
     # Stack to [M, B, 1, H, W] and average over M.
     stacked = torch.stack([prob.detach() for prob in teacher_probs], dim=0)
@@ -89,10 +83,6 @@ def compute_teacher_weights(
         Weight tensor of shape [M, B, 1, H, W], normalized to sum to 1
         over the teacher dimension (dim=0).
 
-    CRISP reference
-    ---------------
-    instruct.md §4.2:
-      π_m(u) ∝ exp(-τ H(p_m(u)) - γ (p_m(u) - p̄(u))²)
     """
     p_bar = compute_teacher_consensus(teacher_probs)  # [B, 1, H, W]
     stacked = torch.stack([prob.detach() for prob in teacher_probs], dim=0)  # [M, B, 1, H, W]
@@ -115,6 +105,7 @@ def aggregate_teacher_posterior(
     teacher_probs: List[torch.Tensor],
     tau: float,
     gamma: float,
+    mode: str = "weighted",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Aggregate teacher probabilities into the CRISP teacher posterior p_T(u).
@@ -125,9 +116,9 @@ def aggregate_teacher_posterior(
         List of teacher probability maps, each [B, 1, H, W].
         Must be detached from teacher computation graphs.
     tau:
-        Entropy weighting coefficient (default 1.0).
+        Entropy weighting coefficient.
     gamma:
-        Agreement weighting coefficient (default 6.0).
+        Agreement weighting coefficient.
 
     Returns
     -------
@@ -136,14 +127,74 @@ def aggregate_teacher_posterior(
         - p_T: aggregated teacher posterior [B, 1, H, W],
         - weights: normalized teacher weights [M, B, 1, H, W].
 
-    CRISP reference
-    ---------------
-    instruct.md §4.2: p_T(u) = Σ_m π_m(u) p_m(u).
     """
-    weights = compute_teacher_weights(teacher_probs, tau=tau, gamma=gamma)
     stacked = torch.stack([prob.detach() for prob in teacher_probs], dim=0)  # [M, B, 1, H, W]
-
-    # Weighted barycenter.
-    p_T = (weights * stacked).sum(dim=0)  # [B, 1, H, W]
+    if mode == "weighted":
+        weights = compute_teacher_weights(teacher_probs, tau=tau, gamma=gamma)
+        p_T = (weights * stacked).sum(dim=0)
+    elif mode == "equal_average":
+        weights = torch.full_like(stacked, 1.0 / len(teacher_probs))
+        p_T = stacked.mean(dim=0)
+    else:
+        raise ValueError(f"Unknown teacher aggregation mode '{mode}'.")
 
     return p_T.detach(), weights.detach()
+
+
+def stable_teacher_noise_seed(experiment_seed: int, image_id: str) -> int:
+    """Derive a process-independent generator seed from seed and image identity."""
+    if not image_id:
+        raise ValueError("Teacher corruption requires a nonempty stable image ID.")
+    digest = hashlib.sha256(f"{experiment_seed}\0{image_id}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % (2**63)
+
+
+def corrupt_teacher_logits(
+    logits: torch.Tensor,
+    image_ids: list[str],
+    experiment_seed: int,
+    std: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Add per-image Gaussian noise to raw logits before any sigmoid."""
+    if logits.shape[0] != len(image_ids):
+        raise ValueError("One stable image ID is required per teacher-logit image.")
+    if std != 1.0:
+        raise ValueError("The journal robustness control requires logit-noise std=1.0.")
+    noises = []
+    for image_id in image_ids:
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(stable_teacher_noise_seed(experiment_seed, image_id))
+        noise = torch.randn(logits.shape[1:], generator=generator, dtype=torch.float32)
+        noises.append(noise.to(device=logits.device, dtype=logits.dtype))
+    stacked_noise = torch.stack(noises, dim=0)
+    return (logits.detach() + std * stacked_noise).detach(), stacked_noise
+
+
+def teacher_robustness_posterior(
+    teacher_logits: list[torch.Tensor],
+    image_ids: list[str],
+    experiment_seed: int,
+    mode: str,
+    tau: float,
+    gamma: float,
+    std: float = 1.0,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor | list[torch.Tensor]]]:
+    """Aggregate the same three-teacher corrupted evidence under either rule."""
+    if len(teacher_logits) != 3:
+        raise ValueError("Robustness control requires exactly three teachers, SAM-Mamba third.")
+    before = [torch.sigmoid(logits.detach()) for logits in teacher_logits]
+    degraded_logits, noise = corrupt_teacher_logits(
+        teacher_logits[2], image_ids, experiment_seed, std=std,
+    )
+    after = [before[0], before[1], torch.sigmoid(degraded_logits)]
+    posterior, weights = aggregate_teacher_posterior(
+        after, tau=tau, gamma=gamma, mode=mode,
+    )
+    diagnostics: dict[str, torch.Tensor | list[torch.Tensor]] = {
+        "teacher_probs_before": before,
+        "teacher_probs_after": after,
+        "degraded_noise": noise,
+        "weights": weights,
+        "degraded_mean_weight": weights[2].mean(),
+    }
+    return posterior, diagnostics
