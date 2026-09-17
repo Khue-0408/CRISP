@@ -39,6 +39,7 @@ from crisp.registry import (
 )
 from crisp.utils.logging import setup_logger
 from crisp.utils.paths import ensure_dir, ensure_local_workspace, resolve_path
+from crisp.utils.provenance import evaluation_provenance, write_provenance
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_csv, save_json
 
@@ -105,6 +106,10 @@ def main(cfg: DictConfig) -> None:
     if bool(workspace_cfg.get("auto_create", False)):
         ensure_local_workspace(workspace_cfg.get("root", "."))
     output_dir = ensure_dir(resolve_path(config.get("eval_output_dir", "outputs/eval")))
+    if config.get("experiment_name") is not None and (output_dir.parent.name, output_dir.name) != (
+        config["experiment_name"], f"seed_{int(config.get('seed', 0))}"
+    ):
+        raise ValueError("Evaluation output path conflicts with experiment/seed identity.")
     setup_logger(output_dir)
 
     # Build model.
@@ -135,6 +140,17 @@ def main(cfg: DictConfig) -> None:
     skip_missing = bool(config.get("eval", {}).get("skip_missing_datasets", False))
     summary_rows: list[dict[str, object]] = []
 
+    def save_metrics(dataset_dir, dataset_name: str, mode: str, metrics: dict) -> None:
+        metric_path = dataset_dir / f"{mode}.json"
+        sidecar_path = dataset_dir / f"{mode}.provenance.json"
+        if metric_path.exists() or sidecar_path.exists():
+            raise FileExistsError(f"Evaluation artifact already exists: {metric_path}")
+        record = evaluation_provenance(
+            config, resolved_checkpoint_path, ckpt, dataset_name, mode, metric_path,
+        )
+        write_provenance(sidecar_path, record)
+        save_json(metric_path, metrics)
+
     for ds_name, ds_config in _resolve_eval_dataset_entries(config):
         try:
             dataset = build_dataset(ds_config, split="test")
@@ -163,14 +179,14 @@ def main(cfg: DictConfig) -> None:
         dataset_dir = ensure_dir(output_dir / dataset_slug)
         if (not projector_off_only) and (projector is not None):
             metrics_on = evaluator.evaluate_dataset(loader, ds_name, projector_on=True)
-            save_json(dataset_dir / "projector_on.json", metrics_on)
+            save_metrics(dataset_dir, ds_name, "projector_on", metrics_on)
             summary_rows.append(
                 {"dataset": ds_name, "mode": "projector_on", **metrics_on}
             )
 
         # Projector-off ablation.
         metrics_off = evaluator.evaluate_dataset(loader, ds_name, projector_on=False)
-        save_json(dataset_dir / "projector_off.json", metrics_off)
+        save_metrics(dataset_dir, ds_name, "projector_off", metrics_off)
         summary_rows.append(
             {"dataset": ds_name, "mode": "projector_off", **metrics_off}
         )

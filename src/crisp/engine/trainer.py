@@ -45,6 +45,7 @@ from crisp.modules.posterior_target import (
 from crisp.modules.solver import solve_alpha_star
 from crisp.modules.teacher_posterior import aggregate_teacher_posterior, teacher_robustness_posterior
 from crisp.utils.logging import log_metrics
+from crisp.utils.provenance import checkpoint_provenance, run_provenance
 
 logger = logging.getLogger("crisp")
 
@@ -124,11 +125,13 @@ class Trainer:
         projector: Optional[nn.Module],
         teacher_ensemble: Optional[nn.Module],
         config: Dict[str, Any],
+        run_record: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.model = model
         self.projector = projector
         self.teacher_ensemble = teacher_ensemble
         self.config = config
+        self.run_record = run_record
 
         # Determine device.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -586,6 +589,15 @@ class Trainer:
         This preserves the exact composed config, optimizer/scheduler/scaler
         states, and the run seed so checkpoints remain resumable and auditable.
         """
+        if self.run_record is None:
+            self.run_record = run_provenance(self.config)
+        selection = {
+            "metric": selection_metric,
+            "best_val_metric": best_val_metric,
+            "best_boundary_f1": best_boundary_f1,
+            "best_bece": best_bece,
+            "best_epoch": best_epoch,
+        }
         return {
             "epoch": epoch,
             "seed": self.seed,
@@ -606,6 +618,7 @@ class Trainer:
             "best_bece": best_bece,
             "best_epoch": best_epoch,
             "selection_metric": selection_metric,
+            "provenance": checkpoint_provenance(self.run_record, epoch, selection),
         }
 
     @staticmethod
@@ -670,6 +683,10 @@ class Trainer:
             )
         if val_loader is not None and (Path(output_dir) / "best.pt").exists():
             raise FileExistsError(f"Selection checkpoint already exists: {Path(output_dir) / 'best.pt'}")
+        if self.run_record is None:
+            self.run_record = run_provenance(
+                self.config, train_dataset=getattr(train_loader, "dataset", None)
+            )
 
         train_batches = len(train_loader) if hasattr(train_loader, "__len__") else "unknown"
         val_batches = len(val_loader) if (val_loader is not None and hasattr(val_loader, "__len__")) else 0

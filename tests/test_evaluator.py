@@ -7,6 +7,7 @@ These tests protect against method drift in the inference protocol:
 - no teachers/solver are invoked during inference.
 """
 
+import json
 import math
 import runpy
 import sys
@@ -21,6 +22,7 @@ import crisp.engine.evaluator as evaluator_module
 from crisp.engine.evaluator import Evaluator
 from crisp.metrics.calibration import boundary_support_mask
 from crisp.models.base import SegmentationOutput
+from crisp.utils.provenance import file_sha256
 
 
 class _DummyModel(nn.Module):
@@ -143,6 +145,9 @@ def test_projector_checkpoint_valid_state_loads_and_same_checkpoint_masks_match(
     assert projector.alpha.item() == pytest.approx(0.75)
     assert (tmp_path / "eval" / "toy" / "projector_on.json").exists()
     assert (tmp_path / "eval" / "toy" / "projector_off.json").exists()
+    sidecar = tmp_path / "eval" / "toy" / "projector_on.provenance.json"
+    assert sidecar.exists()
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["checkpoint_sha256"] == file_sha256(checkpoint_path)
 
     image = torch.tensor([-1.0, 0.0, 1.0]).reshape(1, 1, 1, 3).repeat(1, 3, 1, 1)
     evaluator = Evaluator(model, projector, {})

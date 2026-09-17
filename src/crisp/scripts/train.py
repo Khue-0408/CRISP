@@ -32,6 +32,7 @@ from crisp.engine.trainer import Trainer
 from crisp.utils.logging import setup_logger
 from crisp.utils.model_loading import load_model_checkpoint
 from crisp.utils.paths import ensure_dir, ensure_local_workspace, resolve_path
+from crisp.utils.provenance import run_provenance, write_provenance
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_yaml
 
@@ -210,7 +211,8 @@ def main(cfg: DictConfig) -> None:
     # Hydra changes the working directory; always anchor outputs to the original cwd.
     output_dir = ensure_dir(resolve_path(config.get("output_dir", "outputs")))
     setup_logger(output_dir)
-    save_yaml(output_dir / "resolved_config.yaml", config)
+    if (output_dir / "resolved_config.yaml").exists() or (output_dir / "run.provenance.json").exists():
+        raise FileExistsError(f"Training run artifacts already exist in {output_dir}.")
 
     # Build model.
     model = build_model(config)
@@ -275,12 +277,18 @@ def main(cfg: DictConfig) -> None:
         except (FileNotFoundError, KeyError):
             val_loader = None
 
+    # Capture the actual validated split and loaded teacher artifacts before training.
+    run_record = run_provenance(config, train_dataset=train_dataset)
+    write_provenance(output_dir / "run.provenance.json", run_record)
+    save_yaml(output_dir / "resolved_config.yaml", config)
+
     # Build trainer and run.
     trainer = Trainer(
         model=model,
         projector=projector,
         teacher_ensemble=teacher_ensemble,
         config=config,
+        run_record=run_record,
     )
     trainer.fit(train_loader, val_loader)
 
