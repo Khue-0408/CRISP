@@ -232,7 +232,9 @@ def test_student_adapter_forward_352_exposes_crisp_contract(name: str, model_cfg
 )
 def test_teacher_adapter_forward_352_outputs_detached_probability(name: str, model_cfg: dict) -> None:
     _skip_if_polyp_pvt_backbone_missing(model_cfg)
-    teacher = FrozenTeacher(build_model({"model": model_cfg}), checkpoint_path="")
+    teacher = FrozenTeacher(
+        build_model({"model": model_cfg}), checkpoint_path="", allow_uninitialized_for_testing=True,
+    )
     teacher.eval()
 
     with torch.no_grad():

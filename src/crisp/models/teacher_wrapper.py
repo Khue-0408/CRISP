@@ -37,6 +37,8 @@ class FrozenTeacher(nn.Module):
         checkpoint_loading: Dict | None = None,
         auto_download: bool = False,
         download_url: str | None = None,
+        teacher_name: str | None = None,
+        allow_uninitialized_for_testing: bool = False,
     ) -> None:
         super().__init__()
         self.model = model
@@ -44,25 +46,34 @@ class FrozenTeacher(nn.Module):
         self.checkpoint_loading = checkpoint_loading or {}
         self.auto_download = auto_download
         self.download_url = download_url
+        self.teacher_name = teacher_name or type(model).__name__
+        self.allow_uninitialized_for_testing = allow_uninitialized_for_testing
         self._load_and_freeze()
 
     def _load_and_freeze(self) -> None:
         """Load checkpoint, freeze all parameters, and set eval mode."""
-        if self.checkpoint_path:
+        if not self.checkpoint_path or not str(self.checkpoint_path).strip():
+            if not self.allow_uninitialized_for_testing:
+                raise ValueError(
+                    f"Teacher '{self.teacher_name}' requires a nonempty pretrained checkpoint artifact path."
+                )
+        else:
+            if not bool(self.checkpoint_loading.get("strict", True)):
+                raise ValueError(f"Teacher '{self.teacher_name}' requires strict checkpoint loading.")
             load_model_checkpoint(
                 self.model,
                 self.checkpoint_path,
-                strict=bool(self.checkpoint_loading.get("strict", True)),
+                strict=True,
                 state_dict_keys=self.checkpoint_loading.get("state_dict_keys"),
                 prefixes_to_strip=self.checkpoint_loading.get("prefixes_to_strip"),
                 auto_download=self.auto_download,
                 download_url=self.download_url,
-                description=f"teacher checkpoint for {type(self.model).__name__}",
+                description=f"teacher checkpoint for '{self.teacher_name}'",
             )
         # Freeze all parameters.
         for param in self.model.parameters():
             param.requires_grad = False
-        self.model.eval()
+        super().train(False)
 
     def train(self, mode: bool = True) -> "FrozenTeacher":
         """Override train to always stay in eval mode."""

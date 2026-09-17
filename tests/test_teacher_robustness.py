@@ -59,7 +59,7 @@ class _RawTeacher(nn.Module):
 
 def _teachers() -> TeacherEnsemble:
     return TeacherEnsemble([
-        FrozenTeacher(_RawTeacher(offset), checkpoint_path="")
+        FrozenTeacher(_RawTeacher(offset), checkpoint_path="", allow_uninitialized_for_testing=True)
         for offset in (-1.0, 0.0, 1.0)
     ])
 

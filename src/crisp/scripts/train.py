@@ -3,8 +3,7 @@ CLI entry point for training experiments.
 
 CRISP invariants preserved
 -------------------------
-This file is *wiring only*. It must not modify any mathematical object defined in
-`instruct.md`:
+This file is *wiring only*. It must not modify CRISP's mathematical objects:
 - the forward path remains on raw student logits ``z`` (Trainer controls this),
 - the local solver branch remains detached and produces explicit ``alpha_star``,
 - the projector output is bounded per-pixel in ``[alpha_min, alpha_max]``.
@@ -122,8 +121,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
 
     Notes
     -----
-    Teachers are used only during CRISP training to form ``p_T`` and are always
-    frozen/detached per `instruct.md` §4 and §13.
+    Teachers are used only during CRISP training to form ``p_T`` and remain frozen.
     """
     teachers_cfg = cfg.get("teachers", None)
     if not teachers_cfg:
@@ -153,7 +151,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
         if ckpt is None or not str(ckpt).strip():
             errors.append(
                 f"Teacher '{t.get('name', model_cfg.get('name', 'unknown'))}' "
-                "is missing a checkpoint path."
+                "requires a nonempty pretrained checkpoint artifact path."
             )
             continue
 
@@ -167,6 +165,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
                     checkpoint_loading=t.get("checkpoint_loading"),
                     auto_download=bool(download_cfg.get("enabled", False)),
                     download_url=download_cfg.get("url"),
+                    teacher_name=t.get("name", model_cfg.get("name", "unknown")),
                 )
             )
         except Exception as exc:
