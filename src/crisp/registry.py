@@ -221,10 +221,15 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
         image_dir=merged_cfg.get("image_dir", "images"),
         mask_dir=merged_cfg.get("mask_dir", "masks"),
         split=split,
-        dataset_name=merged_cfg.get("name", data_cfg.get("name", "unknown")),
+        dataset_name=(
+            merged_cfg.get("evaluation_dataset_name", merged_cfg.get("name", data_cfg.get("name", "unknown")))
+            if split == "test" else merged_cfg.get("name", data_cfg.get("name", "unknown"))
+        ),
         transforms=transforms,
         split_file=merged_cfg.get("split_file"),
         image_dir_candidates=merged_cfg.get("image_dir_candidates"),
         mask_dir_candidates=merged_cfg.get("mask_dir_candidates"),
         strict_pairing=bool(merged_cfg.get("strict_pairing", False)),
+        evaluation_manifest=merged_cfg.get("evaluation_manifest") if split == "test" else None,
+        evaluation_count_profile=merged_cfg.get("evaluation_count_profile") if split == "test" else None,
     )

@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 
 import crisp.engine.evaluator as evaluator_module
+from crisp.data.evaluation_membership import evaluation_membership_record
 from crisp.engine.evaluator import Evaluator
 from crisp.metrics.calibration import boundary_support_mask
 from crisp.models.base import SegmentationOutput
@@ -80,7 +81,7 @@ class _StatefulProjector(nn.Module):
 
 def _run_evaluation_script(
     monkeypatch: pytest.MonkeyPatch, config: dict, model: nn.Module, projector: nn.Module | None
-) -> None:
+) -> dict:
     # Replace unavailable CLI and factory dependencies; checkpoint loading stays real.
     hydra = ModuleType("hydra")
     hydra.main = lambda **_kwargs: lambda function: function
@@ -109,8 +110,28 @@ def _run_evaluation_script(
     image[0, :, :8] = -1.0
     image[0, :, 8:] = 1.0
     mask = (image[:1] >= 0).float()
-    globals_["build_dataset"] = lambda _config, split: [{"image": image, "mask": mask}]
+    class SyntheticDataset:
+        evaluation_membership_provenance = evaluation_membership_record(
+            "toy", ["toy/0"], mode="discovered_full_dataset"
+        )
+
+        def __len__(self) -> int:
+            return 1
+
+        def __getitem__(self, index: int) -> dict:
+            assert index == 0
+            return {"image": image, "mask": mask}
+
+    seen_config = {}
+
+    def build_synthetic_dataset(dataset_config: dict, split: str) -> SyntheticDataset:
+        assert split == "test"
+        seen_config.update(dataset_config)
+        return SyntheticDataset()
+
+    globals_["build_dataset"] = build_synthetic_dataset
     globals_["main"](config)
+    return seen_config
 
 
 def _script_config(tmp_path: Path, checkpoint_path: Path, use_projector: bool = True) -> dict:
@@ -148,6 +169,13 @@ def test_projector_checkpoint_valid_state_loads_and_same_checkpoint_masks_match(
     sidecar = tmp_path / "eval" / "toy" / "projector_on.provenance.json"
     assert sidecar.exists()
     assert json.loads(sidecar.read_text(encoding="utf-8"))["checkpoint_sha256"] == file_sha256(checkpoint_path)
+    membership_file = tmp_path / "eval" / "toy" / "dataset.membership.json"
+    on_record = json.loads(sidecar.read_text(encoding="utf-8"))
+    off_record = json.loads((tmp_path / "eval" / "toy" / "projector_off.provenance.json").read_text(encoding="utf-8"))
+    membership = json.loads(membership_file.read_text(encoding="utf-8"))
+    assert on_record["membership_file"] == off_record["membership_file"] == str(membership_file)
+    assert on_record["evaluation_membership_sha256"] == off_record["evaluation_membership_sha256"] == membership["membership_sha256"]
+    assert on_record["evaluation_id"] != off_record["evaluation_id"]
 
     image = torch.tensor([-1.0, 0.0, 1.0]).reshape(1, 1, 1, 3).repeat(1, 3, 1, 1)
     evaluator = Evaluator(model, projector, {})
@@ -157,6 +185,31 @@ def test_projector_checkpoint_valid_state_loads_and_same_checkpoint_masks_match(
     assert torch.equal(off["alpha_hat"], torch.ones_like(off["alpha_hat"]))
     assert torch.equal(on["preds"], off["preds"])
     assert not torch.allclose(on["probs"], off["probs"])
+
+
+def test_unknown_evaluation_manifest_key_fails_before_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    config = _script_config(tmp_path, checkpoint_path)
+    config["eval"]["membership_manifests"] = {"misspelled_dataset": str(tmp_path / "ids.txt")}
+    with pytest.raises(ValueError, match="unknown datasets"):
+        _run_evaluation_script(monkeypatch, config, _StatefulModel(2.0), _StatefulProjector(0.75))
+    assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+
+
+def test_evaluation_cli_routes_named_manifest_without_changing_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    config = _script_config(tmp_path, checkpoint_path)
+    config["eval"]["membership_manifests"] = {"toy": str(tmp_path / "toy-ids.txt")}
+    resolved = _run_evaluation_script(monkeypatch, config, _StatefulModel(2.0), _StatefulProjector(0.75))
+    assert resolved["source_data"]["evaluation_manifest"] == str(tmp_path / "toy-ids.txt")
+    assert resolved["source_data"]["evaluation_dataset_name"] == "toy"
+    assert (tmp_path / "eval" / "toy" / "projector_on.json").exists()
 
 
 @pytest.mark.parametrize(

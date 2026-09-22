@@ -34,6 +34,11 @@ from crisp.data.source_manifest import (
     read_source_manifest,
     validate_source_membership,
 )
+from crisp.data.evaluation_membership import (
+    evaluation_membership_record,
+    read_evaluation_manifest,
+    validate_current_evaluation_count,
+)
 from crisp.utils.paths import ensure_dir, resolve_local_data_root, resolve_path
 
 
@@ -109,6 +114,7 @@ class BinarySegmentationDataset(Dataset):
         self.samples = samples
         self.transforms = transforms
         self.source_split_provenance: Optional[Dict[str, Any]] = None
+        self.evaluation_membership_provenance: Optional[Dict[str, Any]] = None
 
     def __len__(self) -> int:
         """
@@ -196,8 +202,9 @@ def build_dataset_samples(
         mask_dir_candidates=mask_dir_candidates,
     )
 
-    image_files = build_stem_to_path_map(img_dir)
-    mask_files = build_stem_to_path_map(msk_dir)
+    # A duplicate test stem would otherwise be silently replaced by the last file.
+    image_files = _strict_stem_map(img_dir) if split == "test" else build_stem_to_path_map(img_dir)
+    mask_files = _strict_stem_map(msk_dir) if split == "test" else build_stem_to_path_map(msk_dir)
 
     missing_masks = sorted(set(image_files.keys()) - set(mask_files.keys()))
     missing_images = sorted(set(mask_files.keys()) - set(image_files.keys()))
@@ -218,12 +225,15 @@ def build_dataset_samples(
             split_path = root / split_path
         if not split_path.exists():
             raise FileNotFoundError(f"Split file not found: {split_path}")
-        allowed_ids = {
+        requested_ids = [
             line.strip()
             for line in split_path.read_text().splitlines()
             if line.strip()
-        }
-        if strict_pairing:
+        ]
+        if split == "test" and len(requested_ids) != len(set(requested_ids)):
+            raise ValueError(f"Duplicate evaluation ID in split file: {split_path}")
+        allowed_ids = set(requested_ids)
+        if strict_pairing or split == "test":
             missing_from_dataset = sorted(allowed_ids - set(common_stems))
             if missing_from_dataset:
                 raise ValueError(
@@ -539,18 +549,18 @@ def discover_local_test_datasets(data_cfg: Dict[str, Any]) -> Dict[str, Dict[str
                 image_dir_candidates=image_dir_candidates,
                 mask_dir_candidates=mask_dir_candidates,
             )
-            samples = build_dataset_samples(
-                root=child,
-                image_dir=img_dir.name,
-                mask_dir=msk_dir.name,
-                split="test",
-                dataset_name=child.name,
-                image_dir_candidates=image_dir_candidates,
-                mask_dir_candidates=mask_dir_candidates,
-                strict_pairing=bool(data_cfg.get("strict_pairing", True)),
-            )
-        except (FileNotFoundError, ValueError, StopIteration):
+        except (FileNotFoundError, StopIteration):
             continue
+        samples = build_dataset_samples(
+            root=child,
+            image_dir=img_dir.name,
+            mask_dir=msk_dir.name,
+            split="test",
+            dataset_name=child.name,
+            image_dir_candidates=image_dir_candidates,
+            mask_dir_candidates=mask_dir_candidates,
+            strict_pairing=True,
+        )
 
         if not samples:
             continue
@@ -587,6 +597,8 @@ def build_binary_segmentation_dataset(
     image_dir_candidates: Optional[Iterable[str]] = None,
     mask_dir_candidates: Optional[Iterable[str]] = None,
     strict_pairing: bool = False,
+    evaluation_manifest: Optional[str] = None,
+    evaluation_count_profile: Optional[str] = None,
 ) -> BinarySegmentationDataset:
     """
     Build a dataset instance from path configuration.
@@ -594,6 +606,8 @@ def build_binary_segmentation_dataset(
     This function serves as the canonical dataset factory used by the registry
     and experiment scripts.
     """
+    if split == "test" and evaluation_manifest and split_file:
+        raise ValueError("Evaluation manifest and legacy split_file cannot both select membership.")
     samples = build_dataset_samples(
         root=resolve_path(root),
         image_dir=image_dir,
@@ -603,6 +617,30 @@ def build_binary_segmentation_dataset(
         split_file=split_file,
         image_dir_candidates=image_dir_candidates,
         mask_dir_candidates=mask_dir_candidates,
-        strict_pairing=strict_pairing,
+        strict_pairing=strict_pairing or split == "test",
     )
-    return BinarySegmentationDataset(samples=samples, transforms=transforms)
+    mode = "discovered_full_dataset"
+    manifest_path = None
+    manifest_sha256 = None
+    if split == "test" and evaluation_manifest:
+        ids, manifest_path, manifest_sha256 = read_evaluation_manifest(evaluation_manifest, dataset_name)
+        by_id = {f"{sample.dataset_name}/{sample.image_id}": sample for sample in samples}
+        unknown = set(ids) - set(by_id)
+        if unknown:
+            raise ValueError(f"Unknown evaluation sample ID: {sorted(unknown)[:5]}")
+        samples = [by_id[sample_id] for sample_id in sorted(ids)]
+        mode = "explicit_manifest"
+    elif split == "test" and split_file:
+        mode = "legacy_split_file"
+    dataset = BinarySegmentationDataset(samples=samples, transforms=transforms)
+    if split == "test":
+        record = evaluation_membership_record(
+            dataset_name, (f"{sample.dataset_name}/{sample.image_id}" for sample in samples),
+            mode=mode, manifest_path=manifest_path, manifest_sha256=manifest_sha256,
+        )
+        if evaluation_count_profile not in (None, "current_crisp"):
+            raise ValueError(f"Unknown evaluation count profile: {evaluation_count_profile!r}")
+        if evaluation_count_profile == "current_crisp":
+            validate_current_evaluation_count(record)
+        dataset.evaluation_membership_provenance = record
+    return dataset

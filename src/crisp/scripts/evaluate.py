@@ -29,6 +29,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.data.datasets import discover_local_test_datasets
+from crisp.data.evaluation_membership import validate_evaluation_membership
 from crisp.engine.checkpointing import load_checkpoint, load_required_projector_state
 from crisp.engine.evaluator import Evaluator
 from crisp.registry import (
@@ -140,22 +141,43 @@ def main(cfg: DictConfig) -> None:
     skip_missing = bool(config.get("eval", {}).get("skip_missing_datasets", False))
     summary_rows: list[dict[str, object]] = []
 
-    def save_metrics(dataset_dir, dataset_name: str, mode: str, metrics: dict) -> None:
+    def save_metrics(dataset_dir, dataset_name: str, mode: str, metrics: dict, membership: dict, membership_path) -> None:
         metric_path = dataset_dir / f"{mode}.json"
         sidecar_path = dataset_dir / f"{mode}.provenance.json"
         if metric_path.exists() or sidecar_path.exists():
             raise FileExistsError(f"Evaluation artifact already exists: {metric_path}")
         record = evaluation_provenance(
             config, resolved_checkpoint_path, ckpt, dataset_name, mode, metric_path,
+            membership=membership, membership_file=membership_path,
         )
         write_provenance(sidecar_path, record)
         save_json(metric_path, metrics)
 
-    for ds_name, ds_config in _resolve_eval_dataset_entries(config):
+    eval_cfg = config.get("eval", {})
+    manifest_map = eval_cfg.get("membership_manifests", {})
+    if not isinstance(manifest_map, dict):
+        raise ValueError("eval.membership_manifests must map dataset names to paths.")
+    entries = _resolve_eval_dataset_entries(config)
+    unknown_manifest_names = set(manifest_map) - {name for name, _ in entries}
+    if unknown_manifest_names:
+        raise ValueError(f"Evaluation manifests configured for unknown datasets: {sorted(unknown_manifest_names)}")
+    if any(not isinstance(path, str) or not path.strip() for path in manifest_map.values()):
+        raise ValueError("Every configured evaluation manifest requires a nonempty path.")
+
+    for ds_name, ds_config in entries:
+        data_cfg = dict(ds_config.get("source_data", {}))
+        data_cfg["evaluation_dataset_name"] = ds_name
+        if ds_name in manifest_map:
+            if data_cfg.get("evaluation_manifest") and data_cfg["evaluation_manifest"] != manifest_map[ds_name]:
+                raise ValueError(f"Conflicting evaluation manifests configured for {ds_name}.")
+            data_cfg["evaluation_manifest"] = manifest_map[ds_name]
+        if eval_cfg.get("membership_count_profile") is not None:
+            data_cfg["evaluation_count_profile"] = eval_cfg["membership_count_profile"]
+        ds_config = {**ds_config, "source_data": data_cfg}
         try:
             dataset = build_dataset(ds_config, split="test")
         except (FileNotFoundError, KeyError) as exc:
-            if skip_missing:
+            if skip_missing and not data_cfg.get("evaluation_manifest"):
                 print(f"Skipping {ds_name}: dataset not found.")
                 continue
             raise ValueError(
@@ -164,8 +186,14 @@ def main(cfg: DictConfig) -> None:
                 "dataset is missing."
             ) from exc
 
+        membership = getattr(dataset, "evaluation_membership_provenance", None)
+        if not isinstance(membership, dict):
+            raise ValueError(f"Evaluation dataset {ds_name} has no membership provenance.")
+        validate_evaluation_membership(membership)
+        if membership["dataset"] != ds_name or membership["sample_count"] != len(dataset):
+            raise ValueError(f"Evaluation dataset {ds_name} conflicts with its membership record.")
+
         eval_data_cfg = ds_config.get("source_data", {})
-        eval_cfg = config.get("eval", {})
         loader = DataLoader(
             dataset,
             batch_size=int(eval_cfg.get("batch_size", 8)),
@@ -177,16 +205,18 @@ def main(cfg: DictConfig) -> None:
         # Projector-on evaluation.
         dataset_slug = _safe_dataset_slug(ds_name)
         dataset_dir = ensure_dir(output_dir / dataset_slug)
+        membership_path = dataset_dir / "dataset.membership.json"
+        write_provenance(membership_path, membership)
         if (not projector_off_only) and (projector is not None):
             metrics_on = evaluator.evaluate_dataset(loader, ds_name, projector_on=True)
-            save_metrics(dataset_dir, ds_name, "projector_on", metrics_on)
+            save_metrics(dataset_dir, ds_name, "projector_on", metrics_on, membership, membership_path)
             summary_rows.append(
                 {"dataset": ds_name, "mode": "projector_on", **metrics_on}
             )
 
         # Projector-off ablation.
         metrics_off = evaluator.evaluate_dataset(loader, ds_name, projector_on=False)
-        save_metrics(dataset_dir, ds_name, "projector_off", metrics_off)
+        save_metrics(dataset_dir, ds_name, "projector_off", metrics_off, membership, membership_path)
         summary_rows.append(
             {"dataset": ds_name, "mode": "projector_off", **metrics_off}
         )

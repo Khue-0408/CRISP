@@ -226,6 +226,7 @@ def checkpoint_provenance(run: Mapping[str, Any], epoch: int, selection: Mapping
 def evaluation_provenance(
     config: Mapping[str, Any], checkpoint_path: str | Path, checkpoint: Mapping[str, Any],
     dataset: str, mode: str, metric_path: str | Path, *, git: Mapping[str, Any] | None = None,
+    membership: Mapping[str, Any] | None = None, membership_file: str | Path | None = None,
 ) -> dict[str, Any]:
     parent = checkpoint.get("provenance")
     experiment = config.get("experiment_name")
@@ -256,7 +257,18 @@ def evaluation_provenance(
         "dataset": dataset,
         "mode": mode,
     }
-    return {
+    if (membership is None) != (membership_file is None):
+        raise ValueError("Evaluation membership and membership file must be provided together.")
+    if membership is not None:
+        from crisp.data.evaluation_membership import validate_evaluation_membership
+
+        validate_evaluation_membership(dict(membership))
+        if membership["dataset"] != dataset:
+            raise ValueError("Evaluation dataset conflicts with membership dataset.")
+        if read_provenance(membership_file, "evaluation_dataset_membership") != dict(membership):
+            raise ValueError("Evaluation membership file conflicts with the built dataset.")
+        identity["evaluation_membership_sha256"] = membership["membership_sha256"]
+    record = {
         "schema_version": SCHEMA_VERSION,
         "record_type": "evaluation",
         "evaluation_id": content_sha256(identity),
@@ -274,3 +286,11 @@ def evaluation_provenance(
         "source_file": str(metric_path),
         "git_sha": git_info.get("sha"),
     }
+    if membership is not None:
+        record.update({
+            "evaluation_membership_sha256": membership["membership_sha256"],
+            "evaluation_sample_count": membership["sample_count"],
+            "membership_file": str(membership_file),
+            "membership_file_sha256": file_sha256(membership_file),
+        })
+    return record

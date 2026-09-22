@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from crisp.data.evaluation_membership import validate_evaluation_membership
 from crisp.utils.serialization import save_csv
 from crisp.utils.provenance import content_sha256, file_sha256, read_provenance
 
@@ -75,6 +76,25 @@ def _parse_metric_file(path: Path, root: Path) -> dict[str, Any]:
             "dataset": provenance["dataset"],
             "mode": provenance["mode"],
         }
+        membership_sha = provenance.get("evaluation_membership_sha256")
+        membership_file = provenance.get("membership_file")
+        if membership_sha is not None or membership_file is not None:
+            expected_file = path.parent / "dataset.membership.json"
+            if not membership_file or Path(membership_file).resolve() != expected_file.resolve():
+                raise ValueError(f"Membership path conflicts with evaluator path: {sidecar}")
+            if not expected_file.is_file():
+                raise ValueError(f"Evaluation membership file is missing: {expected_file}")
+            membership = read_provenance(expected_file, "evaluation_dataset_membership")
+            validate_evaluation_membership(membership)
+            if membership["dataset"] != dataset:
+                raise ValueError(f"Membership dataset conflicts with evaluator path: {expected_file}")
+            if membership["membership_sha256"] != membership_sha:
+                raise ValueError(f"Membership SHA-256 conflicts with evaluation provenance: {sidecar}")
+            if membership["sample_count"] != provenance.get("evaluation_sample_count"):
+                raise ValueError(f"Membership count conflicts with evaluation provenance: {sidecar}")
+            if file_sha256(expected_file) != provenance.get("membership_file_sha256"):
+                raise ValueError(f"Membership file bytes conflict with evaluation provenance: {sidecar}")
+            identity["evaluation_membership_sha256"] = membership_sha
         if provenance.get("evaluation_id") != content_sha256(identity):
             raise ValueError(f"Evaluation ID conflicts with provenance fields: {sidecar}")
         if checkpoint_path and Path(checkpoint_path).is_file() and file_sha256(checkpoint_path) != checkpoint_sha:
@@ -85,7 +105,14 @@ def _parse_metric_file(path: Path, root: Path) -> dict[str, Any]:
             "checkpoint_sha256": checkpoint_sha,
             "config_sha256": provenance.get("config_sha256"),
             "git_sha": provenance.get("git_sha"),
+            "membership_status": "verified" if membership_sha is not None else "unverified",
         })
+        if membership_sha is not None:
+            record.update({
+                "evaluation_membership_sha256": membership_sha,
+                "evaluation_sample_count": membership["sample_count"],
+                "membership_file": str(expected_file),
+            })
     return record
 
 
@@ -97,7 +124,7 @@ def _collect_metric_files(root: Path) -> list[dict[str, Any]]:
     records = []
     run_identities: dict[str, tuple[str, int, str]] = {}
     for path in sorted(root.rglob("*.json")):
-        if path.name == "summary.json":
+        if path.name in {"summary.json", "dataset.membership.json"}:
             continue
         if path.name.endswith(".provenance.json"):
             metric_path = path.with_name(path.name.replace(".provenance.json", ".json"))
@@ -133,7 +160,10 @@ def main() -> None:
     metric_keys = sorted({key for record in records for key in record["metrics"]})
     identity_headers = ["source_file", "experiment", "seed", "dataset", "mode"]
     trace_headers = [
-        key for key in ("provenance_file", "run_id", "checkpoint_sha256", "config_sha256", "git_sha")
+        key for key in (
+            "provenance_file", "run_id", "checkpoint_sha256", "config_sha256", "git_sha",
+            "membership_status", "evaluation_membership_sha256", "evaluation_sample_count", "membership_file",
+        )
         if any(key in record for record in records)
     ]
     headers = [*identity_headers, *trace_headers, *metric_keys]
