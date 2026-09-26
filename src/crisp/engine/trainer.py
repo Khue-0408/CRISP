@@ -37,6 +37,10 @@ from crisp.modules.losses import (
     crisp_total_loss,
     pranet_native_side_losses,
 )
+from crisp.modules.margin_label_smoothing import (
+    margin_label_smoothing_penalty,
+    resolve_margin_label_smoothing_control,
+)
 from crisp.models.pranet import PraNet
 from crisp.modules.posterior_target import (
     clip_posterior_target,
@@ -132,6 +136,12 @@ class Trainer:
         self.teacher_ensemble = teacher_ensemble
         self.config = config
         self.run_record = run_record
+        self.margin_label_smoothing = resolve_margin_label_smoothing_control(config)
+        if self.margin_label_smoothing is not None:
+            if projector is not None or teacher_ensemble is not None:
+                raise ValueError(
+                    "Margin Label Smoothing cannot receive a projector or teacher ensemble."
+                )
 
         # Determine device.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -396,9 +406,22 @@ class Trainer:
             if not self.use_crisp:
                 # Baseline: standard BCE + Dice.
                 loss_dict = baseline_bce_dice_loss(logits, masks)
+                final_loss = loss_dict["loss"]
+                logs = {k: v.item() for k, v in loss_dict.items()}
+                if self.margin_label_smoothing is not None:
+                    margin_penalty = margin_label_smoothing_penalty(
+                        logits, self.margin_label_smoothing.margin
+                    )
+                    weighted_margin = self.margin_label_smoothing.weight * margin_penalty
+                    final_loss = final_loss + weighted_margin
+                    logs.update({
+                        "margin_penalty": margin_penalty.item(),
+                        "weighted_margin_penalty": weighted_margin.item(),
+                        "loss": final_loss.item(),
+                    })
                 return _training_output_with_native_aux(
-                    loss_dict["loss"],
-                    {k: v.item() for k, v in loss_dict.items()},
+                    final_loss,
+                    logs,
                     native_aux,
                 )
 

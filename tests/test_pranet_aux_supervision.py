@@ -22,6 +22,7 @@ from crisp.modules.losses import (
     pranet_native_side_losses,
     pranet_native_structure_loss,
 )
+from crisp.modules.margin_label_smoothing import margin_label_smoothing_penalty
 
 
 def _retained_structure_loss():
@@ -170,6 +171,49 @@ def test_pranet_baseline_and_phase_i_share_native_side_loss(controlled_batch) ->
     model.zero_grad(set_to_none=True)
     phase_i_step.loss.backward()
     assert model.side5.weight.grad is not None and model.side5.weight.grad.abs().sum() > 0
+
+
+def test_pranet_margin_control_preserves_native_aux_and_penalizes_final_only(
+    controlled_batch,
+) -> None:
+    model = _TinyPraNet()
+    baseline = Trainer(model, None, None, _config(False))
+    control_config = _config(False)
+    control_config["method"]["name"] = "margin_label_smoothing"
+    control_config["calibration_control"] = {
+        "name": "margin_label_smoothing",
+        "margin": 10.0,
+        "weight": 0.1,
+    }
+    control = Trainer(model, None, None, control_config)
+
+    with torch.no_grad():
+        output = model(controlled_batch["image"])
+        final_penalty = margin_label_smoothing_penalty(output.logits)
+    baseline_step = baseline.train_one_step(controlled_batch, epoch=0, step=0)
+    control_step = control.train_one_step(controlled_batch, epoch=0, step=0)
+
+    torch.testing.assert_close(
+        control_step.loss,
+        baseline_step.loss + 0.1 * final_penalty,
+    )
+    assert control_step.logs["native_aux_loss"] == pytest.approx(
+        baseline_step.logs["native_aux_loss"]
+    )
+    for key in ("lateral_map_5", "lateral_map_4", "lateral_map_3"):
+        assert control_step.logs[f"native_aux/{key}"] == pytest.approx(
+            baseline_step.logs[f"native_aux/{key}"]
+        )
+    assert control_step.logs["margin_penalty"] == pytest.approx(final_penalty.item())
+
+    model.side_shift = 1.0
+    shifted = control.train_one_step(controlled_batch, epoch=0, step=0)
+    assert shifted.logs["margin_penalty"] == pytest.approx(
+        control_step.logs["margin_penalty"]
+    )
+    assert shifted.logs["native_aux_loss"] != pytest.approx(
+        control_step.logs["native_aux_loss"]
+    )
 
 
 def test_active_crisp_adds_same_side_loss_without_changing_final_projection(
