@@ -8,17 +8,26 @@ defaults:
   - /eval: metrics
   - _self_
 
+protocol_profile: current_crisp
 experiment_name: thesis_pranet_matched_beta0
 task: binary_polyp_segmentation
 seed: 2026
 seeds: [2026, 2027, 2028, 2029, 2030]
 output_dir: outputs/checkpoints/${experiment_name}/seed_${seed}
 eval_output_dir: outputs/metrics/${experiment_name}/seed_${seed}
-eval_datasets: [Kvasir, CVC-ClinicDB, CVC-300, CVC-ColonDB, ETIS-LaribPolypDB]
+eval_datasets: [Kvasir-SEG, CVC-ClinicDB, CVC-300, CVC-ColonDB, ETIS]
 
 benchmark:
-  train_split: "all valid pairs under data/TrainDataset with deterministic val_fraction=0.1"
+  train_split: "fixed explicit source membership is required"
   eval_split: "Kvasir-SEG, CVC-ClinicDB, CVC-300, CVC-ColonDB, ETIS"
+
+source_data:
+  local_split: null
+  source_split:
+    mode: manifest
+    count_profile: current_crisp
+    train_manifest: null
+    val_manifest: null
 
 training:
   total_epochs: 120
@@ -51,6 +60,7 @@ method:
 
 eval:
   auto_discover_local_test_datasets: true
+  membership_count_profile: current_crisp
 
 crisp:
   projection:

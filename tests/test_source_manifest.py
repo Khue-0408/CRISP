@@ -18,6 +18,7 @@ from crisp.data.source_manifest import (
     validate_current_source_count_profile,
     validate_source_membership,
 )
+from crisp.protocol import validate_current_training_protocol
 from crisp.registry import build_dataset
 
 
@@ -211,6 +212,29 @@ def test_current_count_profile_is_validation_only(tmp_path: Path) -> None:
     config["source_data"]["source_split"]["count_profile"] = "current_crisp"
     with pytest.raises(ValueError, match="Wrong source pool counts"):
         build_dataset(config, "train")
+    assert not (tmp_path / "metadata").exists()
+
+
+def test_valid_current_protocol_routes_through_manifest_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _fixture(tmp_path)
+    config["protocol_profile"] = "current_crisp"
+    config["source_data"]["source_split"]["count_profile"] = "current_crisp"
+    synthetic_counts = {
+        "pool": {"Kvasir-SEG": 2, "CVC-ClinicDB": 2},
+        "train": {"Kvasir-SEG": 1, "CVC-ClinicDB": 1},
+        "val": {"Kvasir-SEG": 1, "CVC-ClinicDB": 1},
+    }
+    monkeypatch.setattr(dataset_module, "CURRENT_SOURCE_COUNT_PROFILE", synthetic_counts)
+
+    validate_current_training_protocol(config)
+    train = build_dataset(config, "train")
+    val = build_dataset(config, "val")
+    assert train.source_split_provenance["mode"] == "manifest"
+    assert val.source_split_provenance["mode"] == "manifest"
+    assert _ids(config, "train") == ["Kvasir-SEG/b", "CVC-ClinicDB/2"]
+    assert _ids(config, "val") == ["CVC-ClinicDB/1", "Kvasir-SEG/a"]
     assert not (tmp_path / "metadata").exists()
 
 

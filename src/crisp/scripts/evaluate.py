@@ -38,6 +38,10 @@ from crisp.data.evaluation_membership import (
 )
 from crisp.engine.checkpointing import load_checkpoint, load_required_projector_state
 from crisp.engine.evaluator import Evaluator
+from crisp.protocol import (
+    validate_current_evaluation_membership_mode,
+    validate_current_evaluation_protocol,
+)
 from crisp.registry import (
     build_dataset,
     build_model,
@@ -123,6 +127,7 @@ def main(cfg: DictConfig) -> None:
     """
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     assert isinstance(config, dict), "Hydra config must resolve to a dict-like structure."
+    validate_current_evaluation_protocol(config)
 
     seed_everything(config.get("seed", 0))
     workspace_cfg = config.get("workspace", {})
@@ -204,7 +209,7 @@ def main(cfg: DictConfig) -> None:
                 continue
             raise ValueError(
                 f"Requested evaluation dataset '{ds_name}' could not be built. "
-                "Paper-faithful target evaluation should fail loudly when a target "
+                "Current-protocol target evaluation should fail loudly when a target "
                 "dataset is missing."
             ) from exc
 
@@ -212,6 +217,7 @@ def main(cfg: DictConfig) -> None:
         if not isinstance(membership, dict):
             raise ValueError(f"Evaluation dataset {ds_name} has no membership provenance.")
         validate_evaluation_membership(membership)
+        validate_current_evaluation_membership_mode(config, ds_name, membership)
         if membership["dataset"] != ds_name or membership["sample_count"] != len(dataset):
             raise ValueError(f"Evaluation dataset {ds_name} conflicts with its membership record.")
 

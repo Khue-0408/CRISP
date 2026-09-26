@@ -202,6 +202,28 @@ def test_unknown_evaluation_manifest_key_fails_before_metrics(
     assert not (tmp_path / "eval" / "toy" / "projector_on.json").exists()
 
 
+def test_current_protocol_discovery_fails_before_evaluation_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    config = _script_config(tmp_path, checkpoint_path)
+    config["protocol_profile"] = "current_crisp"
+    config["eval_datasets"] = [
+        "Kvasir-SEG", "CVC-ClinicDB", "CVC-300", "CVC-ColonDB", "ETIS",
+    ]
+    config["eval"] = {
+        "batch_size": 1,
+        "auto_discover_local_test_datasets": True,
+        "membership_count_profile": "current_crisp",
+    }
+    with pytest.raises(ValueError, match="requires eval.membership_manifests"):
+        _run_evaluation_script(
+            monkeypatch, config, _StatefulModel(2.0), _StatefulProjector(0.75)
+        )
+    assert not (tmp_path / "eval").exists()
+
+
 def test_evaluation_cli_routes_named_manifest_without_changing_metrics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

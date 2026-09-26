@@ -9,8 +9,26 @@ from pathlib import Path
 import pytest
 import torch
 
+import crisp.scripts.train as train_script
 from crisp.models.unet import UNet
 from crisp.scripts.train import _maybe_build_teacher_ensemble
+
+
+def test_current_protocol_fraction_fails_before_training_output(tmp_path: Path) -> None:
+    config = train_script.OmegaConf.create(
+        {
+            "protocol_profile": "current_crisp",
+            "output_dir": str(tmp_path / "run"),
+            "source_data": {
+                "source_split": {"mode": "fraction"},
+                "local_split": {"val_fraction": 0.1},
+            },
+        }
+    )
+    entrypoint = getattr(train_script.main, "__wrapped__")
+    with pytest.raises(ValueError, match="requires source_data.source_split.mode='manifest'"):
+        entrypoint(config)
+    assert not (tmp_path / "run").exists()
 
 
 def test_strict_teacher_builder_requires_checkpoint_paths(tmp_path: Path) -> None:

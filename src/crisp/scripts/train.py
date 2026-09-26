@@ -22,6 +22,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.models.teacher_wrapper import FrozenTeacher, TeacherEnsemble
+from crisp.protocol import validate_current_training_protocol
 from crisp.registry import (
     build_dataset,
     build_model,
@@ -178,7 +179,7 @@ def _maybe_build_teacher_ensemble(cfg: dict) -> TeacherEnsemble | None:
     if strict and errors:
         joined = "\n- ".join(errors)
         raise ValueError(
-            "Paper-faithful CRISP training requires a complete frozen teacher pool.\n"
+            "The current CRISP protocol requires a complete frozen teacher pool.\n"
             f"- {joined}"
         )
     if not teachers:
@@ -201,6 +202,7 @@ def main(cfg: DictConfig) -> None:
     """
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     assert isinstance(config, dict), "Hydra config must resolve to a dict-like structure."
+    validate_current_training_protocol(config)
 
     # Setup.
     seed = config.get("seed", 0)
@@ -246,7 +248,7 @@ def main(cfg: DictConfig) -> None:
         drop_last=True,
     )
 
-    # Validation loader. Paper-faithful experiment configs require source validation
+    # Validation loader. Current-protocol experiment configs require source validation
     # for model selection; debug configs may disable it explicitly.
     val_loader = None
     if require_validation:
@@ -254,7 +256,7 @@ def main(cfg: DictConfig) -> None:
             val_dataset = build_dataset(config, split="val")
         except (FileNotFoundError, KeyError) as exc:
             raise ValueError(
-                "This experiment requires source validation for paper-faithful model "
+                "This experiment requires source validation for current-protocol model "
                 "selection, but the validation split could not be built."
             ) from exc
         val_loader = DataLoader(
