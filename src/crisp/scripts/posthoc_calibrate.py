@@ -15,8 +15,11 @@ Supported post-hoc baselines (minimal faithful)
 - global temperature scaling (TS),
 - boundary temperature scaling (bTS) on top-k w_b pixels,
 - selective temperature scaling (STS),
-- local temperature scaling (LTS) via w_b quantile bins,
 - histogram binning (BBQ-style lightweight baseline).
+
+Local Temperature Scaling is protocol-blocked because the retained implementation
+requires target-label-derived boundary weights during application and the current
+manuscript does not specify a target-blind replacement.
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ from crisp.modules.boundary import compute_boundary_weight
 from crisp.modules.posthoc import (
     BoundaryTemperatureScaler,
     HistogramBinningCalibrator,
-    LocalTemperatureScaler,
+    LOCAL_TS_PROTOCOL_BLOCK_MESSAGE,
     PostHocFitArtifacts,
     SelectiveTemperatureScaler,
     TemperatureScaler,
@@ -53,6 +56,12 @@ from crisp.registry import build_dataset, build_model
 from crisp.utils.logging import setup_logger
 from crisp.utils.seed import seed_everything
 from crisp.utils.serialization import save_json
+
+
+def _block_target_dependent_local_ts(methods: List[Any]) -> None:
+    """Reject Local TS before any scientific output path or artifact is created."""
+    if any(str(method).lower() in {"lts", "local_ts"} for method in methods):
+        raise RuntimeError(LOCAL_TS_PROTOCOL_BLOCK_MESSAGE)
 
 
 @torch.no_grad()
@@ -132,6 +141,14 @@ def main(cfg: DictConfig) -> None:
     config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     assert isinstance(config, dict)
 
+    configured_methods = config.get("posthoc_methods", ["ts"])
+    methods = (
+        [configured_methods]
+        if isinstance(configured_methods, str)
+        else list(configured_methods)
+    )
+    _block_target_dependent_local_ts(methods)
+
     seed_everything(config.get("seed", 0))
     output_dir = Path(to_absolute_path(config.get("posthoc_output_dir", "outputs/posthoc")))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +194,6 @@ def main(cfg: DictConfig) -> None:
     logits, labels, wb = _collect_val_tensors(model, val_loader, device, sigma_b=sigma_b, boundary_mode=boundary_mode)
 
     # Fit calibrator(s) on source-val only.
-    methods = config.get("posthoc_methods", ["ts"])
     results: Dict[str, Any] = {"checkpoint": str(checkpoint_path), "methods": {}}
     fitted_calibrators: Dict[str, Any] = {}
 
@@ -200,10 +216,7 @@ def main(cfg: DictConfig) -> None:
             artifacts = PostHocFitArtifacts(method="sts", params={"temperature": float(cal.temperature), "threshold": thr})
             probs = cal.transform(logits)
         elif m == "lts":
-            n_bins = int(config.get("posthoc_local_bins", 2))
-            cal = LocalTemperatureScaler(n_bins=n_bins)
-            artifacts = cal.fit(logits, labels, wb)
-            probs = cal.transform(logits, wb)
+            raise RuntimeError(LOCAL_TS_PROTOCOL_BLOCK_MESSAGE)
         elif m == "histbin":
             cal = HistogramBinningCalibrator(n_bins=ece_bins)
             artifacts = cal.fit(torch.sigmoid(logits), labels)
@@ -247,7 +260,7 @@ def main(cfg: DictConfig) -> None:
                 if m in {"ts", "bts", "sts"}:
                     probs = calibrator.transform(tgt_logits)
                 elif m == "lts":
-                    probs = calibrator.transform(tgt_logits, tgt_wb)
+                    raise RuntimeError(LOCAL_TS_PROTOCOL_BLOCK_MESSAGE)
                 elif m == "histbin":
                     probs = calibrator.transform(torch.sigmoid(tgt_logits))
                 else:

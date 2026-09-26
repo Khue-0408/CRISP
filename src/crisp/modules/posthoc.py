@@ -19,6 +19,13 @@ import torch.nn.functional as F
 from crisp.metrics.calibration import boundary_support_mask
 
 
+LOCAL_TS_PROTOCOL_BLOCK_MESSAGE = (
+    "Current Local TS implementation requires target-derived boundary information "
+    "during application and violates the source-only evaluation contract. The control "
+    "is blocked pending a manuscript-backed target-blind definition."
+)
+
+
 class TemperatureScaler:
     """
     Simple global temperature scaling calibrator.
@@ -177,18 +184,13 @@ class SelectiveTemperatureScaler(TemperatureScaler):
         return scale_mask * scaled + (1.0 - scale_mask) * p
 
 
-class LocalTemperatureScaler:
+class LegacyTargetDependentLocalTemperatureScaler:
     """
-    Local Temperature Scaling (LTS) via a small number of spatial bins.
+    Diagnostic-only legacy Local TS using target-label-derived spatial bins.
 
-    This is a minimal faithful implementation for dense prediction: it fits K
-    temperatures over disjoint pixel partitions derived from the boundary weight
-    field (e.g., boundary-near vs off-boundary, or multi-quantile bins).
-
-    This is *not* CRISP and must remain post-hoc:
-    - no effect on training,
-    - fit on source validation only,
-    - evaluated on frozen logits.
+    Its application requires ``boundary_weight`` derived from the target ground-truth
+    mask. It is retained only to preserve forensic evidence and must never be used as
+    a publication-facing/current-manuscript Local TS control.
     """
 
     def __init__(self, n_bins: int = 2) -> None:
@@ -244,19 +246,16 @@ class LocalTemperatureScaler:
 
         self.temperatures = torch.stack(temps).detach().cpu()
         return PostHocFitArtifacts(
-            method="local_ts",
+            method="legacy_target_dependent_local_ts",
             params={f"temperature_bin_{i}": float(t.item()) for i, t in enumerate(self.temperatures)},
         )
 
-    def transform(self, logits: torch.Tensor, boundary_weight: torch.Tensor) -> torch.Tensor:
+    def diagnostic_bin_assignments(self, boundary_weight: torch.Tensor) -> torch.Tensor:
+        """Expose the unsafe target-derived application bins for forensic tests."""
         wb = boundary_weight.detach().reshape(boundary_weight.shape[0], -1)  # [B, N]
         qs = torch.linspace(0.0, 1.0, self.n_bins + 1, device=wb.device)
         thr = torch.quantile(wb, qs, dim=1)  # [n_bins+1, B]
-
-        flat_logits = logits.reshape(logits.shape[0], -1)
-        out = torch.sigmoid(flat_logits)  # default identity
-
-        temps = self.temperatures.to(logits.device)
+        assignments = torch.full(wb.shape, -1, dtype=torch.long, device=wb.device)
         for b in range(self.n_bins):
             lo = thr[b].unsqueeze(1)
             hi = thr[b + 1].unsqueeze(1)
@@ -264,10 +263,31 @@ class LocalTemperatureScaler:
                 in_bin = (wb >= lo) & (wb < hi)
             else:
                 in_bin = (wb >= lo) & (wb <= hi)
+            assignments[in_bin] = b
+        return assignments.reshape(boundary_weight.shape)
+
+    def transform(self, logits: torch.Tensor, boundary_weight: torch.Tensor) -> torch.Tensor:
+        assignments = self.diagnostic_bin_assignments(boundary_weight).reshape(
+            boundary_weight.shape[0], -1
+        )
+
+        flat_logits = logits.reshape(logits.shape[0], -1)
+        out = torch.sigmoid(flat_logits)  # default identity
+
+        temps = self.temperatures.to(logits.device)
+        for b in range(self.n_bins):
+            in_bin = assignments == b
             if in_bin.any():
                 out[in_bin] = torch.sigmoid(flat_logits[in_bin] / temps[b])
 
         return out.reshape(logits.shape)
+
+
+class LocalTemperatureScaler:
+    """Blocked canonical Local TS control; no target-blind definition is specified."""
+
+    def __init__(self, *_args, **_kwargs) -> None:
+        raise RuntimeError(LOCAL_TS_PROTOCOL_BLOCK_MESSAGE)
 
 
 class HistogramBinningCalibrator:
