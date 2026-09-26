@@ -12,12 +12,43 @@ from crisp.utils.provenance import SCHEMA_VERSION
 
 
 CURRENT_EVALUATION_COUNTS = {
-    "Kvasir": 100,
+    "Kvasir-SEG": 100,
     "CVC-ClinicDB": 62,
     "CVC-300": 60,
     "CVC-ColonDB": 380,
-    "ETIS-LaribPolypDB": 196,
+    "ETIS": 196,
 }
+
+EVALUATION_STORAGE_ALIASES = {
+    "Kvasir": "Kvasir-SEG",
+    "ETIS-LaribPolypDB": "ETIS",
+}
+
+
+def canonical_evaluation_dataset_name(name: str) -> str:
+    """Resolve only known storage aliases to manuscript dataset identities."""
+    if not isinstance(name, str) or not name:
+        raise ValueError("Evaluation dataset name must be a nonempty string.")
+    return EVALUATION_STORAGE_ALIASES.get(name, name)
+
+
+def resolve_evaluation_dataset_identity(
+    storage_name: str, declared_identity: str | None = None,
+) -> str:
+    """Keep storage lookup separate from an explicit scientific identity."""
+    resolved_storage = canonical_evaluation_dataset_name(storage_name)
+    if declared_identity is None:
+        return resolved_storage
+    if declared_identity in EVALUATION_STORAGE_ALIASES:
+        raise ValueError(
+            f"Explicit evaluation identity must be canonical, not storage alias {declared_identity!r}."
+        )
+    if resolved_storage != declared_identity:
+        raise ValueError(
+            "Evaluation storage/config name conflicts with explicit scientific identity: "
+            f"{storage_name!r} -> {resolved_storage!r}, declared {declared_identity!r}."
+        )
+    return declared_identity
 
 
 def _normalized_sha256(ids: Iterable[str]) -> str:

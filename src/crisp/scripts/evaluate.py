@@ -29,7 +29,13 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.data.datasets import discover_local_test_datasets
-from crisp.data.evaluation_membership import validate_evaluation_membership
+from crisp.data.evaluation_membership import (
+    EVALUATION_STORAGE_ALIASES,
+    CURRENT_EVALUATION_COUNTS,
+    canonical_evaluation_dataset_name,
+    resolve_evaluation_dataset_identity,
+    validate_evaluation_membership,
+)
 from crisp.engine.checkpointing import load_checkpoint, load_required_projector_state
 from crisp.engine.evaluator import Evaluator
 from crisp.registry import (
@@ -73,13 +79,15 @@ def _resolve_eval_dataset_entries(config: dict) -> list[tuple[str, dict]]:
     if bool(eval_cfg.get("auto_discover_local_test_datasets", False)):
         discovered = discover_local_test_datasets(source_data_cfg)
         if requested:
-            missing = [name for name in requested if name not in discovered]
+            ordered_names = [canonical_evaluation_dataset_name(name) for name in requested]
+            if len(ordered_names) != len(set(ordered_names)):
+                raise ValueError("Evaluation dataset aliases resolve to duplicate scientific identities.")
+            missing = [name for name in ordered_names if name not in discovered]
             if missing:
                 raise KeyError(
                     "Requested local evaluation datasets were not discovered under "
                     f"TestDataset: {missing}"
                 )
-            ordered_names = requested
         else:
             ordered_names = sorted(discovered.keys())
         return [
@@ -88,10 +96,24 @@ def _resolve_eval_dataset_entries(config: dict) -> list[tuple[str, dict]]:
         ]
 
     datasets = requested or ["colondb", "etis", "polypgen"]
-    return [
-        (name, _resolve_eval_dataset_config(config, name))
-        for name in datasets
-    ]
+    entries: list[tuple[str, dict]] = []
+    for lookup_name in datasets:
+        dataset_config = _resolve_eval_dataset_config(config, lookup_name)
+        data_config = dataset_config.get("source_data", {})
+        configured_name = data_config.get("name", lookup_name)
+        canonical_name = resolve_evaluation_dataset_identity(
+            configured_name, data_config.get("evaluation_dataset_name")
+        )
+        if lookup_name in CURRENT_EVALUATION_COUNTS or lookup_name in EVALUATION_STORAGE_ALIASES:
+            if canonical_evaluation_dataset_name(lookup_name) != canonical_name:
+                raise ValueError(
+                    f"Evaluation lookup identity {lookup_name!r} conflicts with {canonical_name!r}."
+                )
+        entries.append((canonical_name, dataset_config))
+    names = [name for name, _ in entries]
+    if len(names) != len(set(names)):
+        raise ValueError("Evaluation configs resolve to duplicate scientific dataset identities.")
+    return entries
 
 
 @hydra.main(version_base=None)

@@ -23,6 +23,7 @@ from crisp.data.evaluation_membership import evaluation_membership_record
 from crisp.engine.evaluator import Evaluator
 from crisp.metrics.calibration import boundary_support_mask
 from crisp.models.base import SegmentationOutput
+from crisp.scripts.export_tables import _collect_metric_files
 from crisp.utils.provenance import file_sha256
 
 
@@ -110,23 +111,25 @@ def _run_evaluation_script(
     image[0, :, :8] = -1.0
     image[0, :, 8:] = 1.0
     mask = (image[:1] >= 0).float()
-    class SyntheticDataset:
-        evaluation_membership_provenance = evaluation_membership_record(
-            "toy", ["toy/0"], mode="discovered_full_dataset"
-        )
-
-        def __len__(self) -> int:
-            return 1
-
-        def __getitem__(self, index: int) -> dict:
-            assert index == 0
-            return {"image": image, "mask": mask}
-
     seen_config = {}
 
-    def build_synthetic_dataset(dataset_config: dict, split: str) -> SyntheticDataset:
+    def build_synthetic_dataset(dataset_config: dict, split: str):
         assert split == "test"
         seen_config.update(dataset_config)
+        identity = dataset_config["source_data"]["evaluation_dataset_name"]
+
+        class SyntheticDataset:
+            evaluation_membership_provenance = evaluation_membership_record(
+                identity, [f"{identity}/0"], mode="discovered_full_dataset"
+            )
+
+            def __len__(self) -> int:
+                return 1
+
+            def __getitem__(self, index: int) -> dict:
+                assert index == 0
+                return {"image": image, "mask": mask}
+
         return SyntheticDataset()
 
     globals_["build_dataset"] = build_synthetic_dataset
@@ -210,6 +213,30 @@ def test_evaluation_cli_routes_named_manifest_without_changing_metrics(
     assert resolved["source_data"]["evaluation_manifest"] == str(tmp_path / "toy-ids.txt")
     assert resolved["source_data"]["evaluation_dataset_name"] == "toy"
     assert (tmp_path / "eval" / "toy" / "projector_on.json").exists()
+
+
+def test_storage_alias_resolves_to_one_canonical_artifact_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "valid.pt"
+    _save_test_checkpoint(checkpoint_path, _StatefulProjector(0.75).state_dict())
+    config = _script_config(tmp_path, checkpoint_path)
+    config["experiment_name"] = "identity_test"
+    config["eval_output_dir"] = str(tmp_path / "eval" / "identity_test" / "seed_7")
+    config["eval_datasets"] = ["kvasir"]
+    config["eval_data"] = {
+        "kvasir": {"name": "Kvasir", "num_workers": 0, "pin_memory": False}
+    }
+    _run_evaluation_script(monkeypatch, config, _StatefulModel(2.0), _StatefulProjector(0.75))
+
+    dataset_dir = tmp_path / "eval" / "identity_test" / "seed_7" / "Kvasir-SEG"
+    membership = json.loads((dataset_dir / "dataset.membership.json").read_text(encoding="utf-8"))
+    sidecar = json.loads((dataset_dir / "projector_on.provenance.json").read_text(encoding="utf-8"))
+    exported = _collect_metric_files(tmp_path / "eval")
+    assert membership["dataset"] == "Kvasir-SEG"
+    assert membership["sample_ids"] == ["Kvasir-SEG/0"]
+    assert sidecar["dataset"] == "Kvasir-SEG"
+    assert {record["dataset"] for record in exported} == {"Kvasir-SEG"}
 
 
 @pytest.mark.parametrize(

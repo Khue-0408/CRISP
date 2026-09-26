@@ -1,4 +1,4 @@
-name: Kvasir
+name: Kvasir-SEG
 root: ${oc.env:CRISP_DATA_ROOT,data}/TestDataset/Kvasir
 image_dir: images
 mask_dir: masks

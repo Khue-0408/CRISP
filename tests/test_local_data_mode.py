@@ -179,9 +179,10 @@ def test_local_test_dataset_discovery_supports_immediate_subfolders(tmp_path: Pa
     cfg = _local_config(tmp_path)
 
     discovered = discover_local_test_datasets(cfg["source_data"])
-    assert sorted(discovered.keys()) == ["CVC-ColonDB", "ETIS-LaribPolypDB"]
+    assert sorted(discovered.keys()) == ["CVC-ColonDB", "ETIS"]
     assert discovered["CVC-ColonDB"]["image_dir"] == "images"
-    assert discovered["ETIS-LaribPolypDB"]["mask_dir"] == "mask"
+    assert discovered["ETIS"]["mask_dir"] == "mask"
+    assert discovered["ETIS"]["storage_dataset_name"] == "ETIS-LaribPolypDB"
 
 
 def test_dataset_sample_builder_fails_when_no_pairs_match(tmp_path: Path) -> None:

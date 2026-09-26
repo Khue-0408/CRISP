@@ -35,6 +35,7 @@ from crisp.data.source_manifest import (
     validate_source_membership,
 )
 from crisp.data.evaluation_membership import (
+    canonical_evaluation_dataset_name,
     evaluation_membership_record,
     read_evaluation_manifest,
     validate_current_evaluation_count,
@@ -551,12 +552,13 @@ def discover_local_test_datasets(data_cfg: Dict[str, Any]) -> Dict[str, Dict[str
             )
         except (FileNotFoundError, StopIteration):
             continue
+        canonical_name = canonical_evaluation_dataset_name(child.name)
         samples = build_dataset_samples(
             root=child,
             image_dir=img_dir.name,
             mask_dir=msk_dir.name,
             split="test",
-            dataset_name=child.name,
+            dataset_name=canonical_name,
             image_dir_candidates=image_dir_candidates,
             mask_dir_candidates=mask_dir_candidates,
             strict_pairing=True,
@@ -565,8 +567,13 @@ def discover_local_test_datasets(data_cfg: Dict[str, Any]) -> Dict[str, Dict[str
         if not samples:
             continue
 
-        discovered[child.name] = {
-            "name": child.name,
+        if canonical_name in discovered:
+            raise ValueError(
+                f"Multiple local test directories resolve to evaluation dataset {canonical_name!r}."
+            )
+        discovered[canonical_name] = {
+            "name": canonical_name,
+            "storage_dataset_name": child.name,
             "root": str(child),
             "image_dir": img_dir.name,
             "mask_dir": msk_dir.name,

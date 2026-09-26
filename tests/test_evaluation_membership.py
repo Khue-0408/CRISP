@@ -10,8 +10,11 @@ import torch
 
 from crisp.data.evaluation_membership import (
     CURRENT_EVALUATION_COUNTS,
+    EVALUATION_STORAGE_ALIASES,
+    canonical_evaluation_dataset_name,
     evaluation_membership_record,
     read_evaluation_manifest,
+    resolve_evaluation_dataset_identity,
     validate_current_evaluation_count,
     validate_evaluation_membership,
 )
@@ -83,6 +86,37 @@ def test_duplicate_filename_stem_fails_before_membership_hash(tmp_path: Path) ->
         build_dataset(_config(root), split="test")
 
 
+def test_current_count_profile_uses_exact_manuscript_names() -> None:
+    assert CURRENT_EVALUATION_COUNTS == {
+        "Kvasir-SEG": 100,
+        "CVC-ClinicDB": 62,
+        "CVC-300": 60,
+        "CVC-ColonDB": 380,
+        "ETIS": 196,
+    }
+    assert "Kvasir" not in CURRENT_EVALUATION_COUNTS
+    assert "ETIS-LaribPolypDB" not in CURRENT_EVALUATION_COUNTS
+
+
+def test_only_observed_storage_aliases_are_canonicalized() -> None:
+    assert EVALUATION_STORAGE_ALIASES == {
+        "Kvasir": "Kvasir-SEG",
+        "ETIS-LaribPolypDB": "ETIS",
+    }
+    assert canonical_evaluation_dataset_name("Kvasir") == "Kvasir-SEG"
+    assert canonical_evaluation_dataset_name("ETIS-LaribPolypDB") == "ETIS"
+    assert canonical_evaluation_dataset_name("debug-dataset") == "debug-dataset"
+    assert "ColonDB" not in EVALUATION_STORAGE_ALIASES
+
+
+def test_explicit_scientific_identity_conflicts_fail_loudly() -> None:
+    assert resolve_evaluation_dataset_identity("ETIS-LaribPolypDB", "ETIS") == "ETIS"
+    with pytest.raises(ValueError, match="must be canonical"):
+        resolve_evaluation_dataset_identity("Kvasir", "Kvasir")
+    with pytest.raises(ValueError, match="conflicts with explicit scientific identity"):
+        resolve_evaluation_dataset_identity("ETIS-LaribPolypDB", "CVC-300")
+
+
 @pytest.mark.parametrize("dataset,count", list(CURRENT_EVALUATION_COUNTS.items()))
 def test_current_count_profile_validates_without_selecting_ids(dataset: str, count: int) -> None:
     ids = [f"{dataset}/synthetic_{index:03d}" for index in range(count)]
@@ -91,6 +125,36 @@ def test_current_count_profile_validates_without_selecting_ids(dataset: str, cou
     wrong = evaluation_membership_record(dataset, ids[:-1], mode="discovered_full_dataset")
     with pytest.raises(ValueError, match="Wrong evaluation count"):
         validate_current_evaluation_count(wrong)
+
+
+def test_noncanonical_count_profile_identity_fails() -> None:
+    record = evaluation_membership_record(
+        "Kvasir", [f"Kvasir/synthetic_{index:03d}" for index in range(100)],
+        mode="discovered_full_dataset",
+    )
+    with pytest.raises(ValueError, match="No current evaluation count profile"):
+        validate_current_evaluation_count(record)
+
+
+@pytest.mark.parametrize(
+    "storage_name,canonical_name",
+    [
+        ("Kvasir", "Kvasir-SEG"),
+        ("ETIS-LaribPolypDB", "ETIS"),
+        ("debug-dataset", "debug-dataset"),
+    ],
+)
+def test_local_storage_alias_builds_canonical_membership(
+    tmp_path: Path, storage_name: str, canonical_name: str,
+) -> None:
+    root = tmp_path / "TestDataset" / storage_name
+    _files(root, ("a",), ("a",))
+    discovered = discover_local_test_datasets({"root": str(tmp_path), "test_dir": "TestDataset"})
+    assert list(discovered) == [canonical_name]
+    assert discovered[canonical_name]["storage_dataset_name"] == storage_name
+    dataset = build_dataset({"source_data": discovered[canonical_name]}, split="test")
+    assert dataset.evaluation_membership_provenance["dataset"] == canonical_name
+    assert dataset.evaluation_membership_provenance["sample_ids"] == [f"{canonical_name}/a"]
 
 
 def test_explicit_manifest_selects_exact_pairs_independent_of_file_order(tmp_path: Path) -> None:

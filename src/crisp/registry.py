@@ -19,6 +19,7 @@ from crisp.data.datasets import (
     build_binary_segmentation_dataset,
     build_local_train_val_dataset,
 )
+from crisp.data.evaluation_membership import resolve_evaluation_dataset_identity
 from crisp.models.projector_head import CRISPProjectorHead
 
 
@@ -216,15 +217,19 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
             seed=int(config.get("seed", 0)),
         )
 
+    configured_name = merged_cfg.get("name", data_cfg.get("name", "unknown"))
+    dataset_name = (
+        resolve_evaluation_dataset_identity(
+            configured_name, merged_cfg.get("evaluation_dataset_name")
+        )
+        if split == "test" else configured_name
+    )
     return build_binary_segmentation_dataset(
         root=merged_cfg.get("root", "data"),
         image_dir=merged_cfg.get("image_dir", "images"),
         mask_dir=merged_cfg.get("mask_dir", "masks"),
         split=split,
-        dataset_name=(
-            merged_cfg.get("evaluation_dataset_name", merged_cfg.get("name", data_cfg.get("name", "unknown")))
-            if split == "test" else merged_cfg.get("name", data_cfg.get("name", "unknown"))
-        ),
+        dataset_name=dataset_name,
         transforms=transforms,
         split_file=merged_cfg.get("split_file"),
         image_dir_candidates=merged_cfg.get("image_dir_candidates"),
