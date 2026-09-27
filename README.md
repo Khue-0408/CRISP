@@ -1,82 +1,66 @@
 # CRISP
 
-CRISP is a research codebase for boundary-posterior projection in binary polyp segmentation. It trains lightweight segmentation students with teacher-guided boundary posterior targets, then deploys the student with an amortized projector that is teacher-free and solver-free at inference time.
+**CRISP: Amortized Boundary Posterior Projection for Calibrated Dense Prediction under Cross-Dataset Shift**
 
-## Architecture Overview
+CRISP is the official research repository for constrained boundary-posterior
+projection in binary polyp segmentation. It combines boundary-local teacher
+supervision with a bounded, per-pixel inverse-temperature projection, then
+amortizes that projection with a lightweight head for single-pass deployment.
 
-![Architecture Overview](docs/ch3_arc.png)
+## Overview
 
-## Qualitative Results
+The repository provides current CRISP implementations for U-Net, U-Net++, and
+PraNet students; strict source and evaluation membership controls; segmentation
+and calibration metrics; checkpoint selection; and byte-linked run, checkpoint,
+evaluation, and export provenance.
 
-### Seen-domain qualitative results
+The codebase implements the method and its protocol gates. Datasets, exact
+membership manifests, pretrained artifacts, trained checkpoints, and complete
+raw per-seed metric artifacts are not committed to this repository.
 
-![Seen-domain qualitative results](docs/ch4_qual_seen.png)
+## Method
 
-### Unseen-domain qualitative results
+During training, CRISP follows this path:
 
-![Unseen-domain qualitative results](docs/ch4_qual_unseen.png)
+```text
+source image
+  -> student raw foreground logit z and backbone-specific dense feature tap F_b
+  -> frozen teacher consensus p_T
+  -> boundary-posterior target t*
+  -> detached constrained optimum alpha*
+  -> amortized projector alpha_hat(F, z)
+  -> task loss + amortization loss
+```
 
-## Key Features
+At deployment, the teachers and numerical solver are absent:
 
-- Baseline and CRISP training for U-Net, UNet++, and PraNet students.
-- UACANet-L and Polyp-PVT teacher pool for CRISP training.
-- Detached boundary-posterior projection targets with bounded amortized projector output.
-- Projector-on and projector-off evaluation for CRISP checkpoints.
-- Explicit source and evaluation membership manifests for current-protocol runs.
-- Geometry and calibration metrics for medical image segmentation reporting.
-- Checkpoint-compatible adapters for retained student and teacher backbones.
+```text
+image
+  -> host-specific dense feature tap F_b and original full-resolution raw logit z
+  -> bounded projector alpha_hat
+  -> sigmoid(alpha_hat * z)
+```
 
-## Manuscript Results
+Because `alpha_hat` is positive and bounded, multiplying a fixed logit field by
+it preserves the hard decision at probability threshold 0.5. Any geometry change
+therefore comes from training-time learning, not from threshold changes during
+deployment. See [the method notes](docs/method.md) for the implementation map.
 
-The tables below transcribe manuscript-reported results; this repository does not
-currently contain the complete raw run artifacts required to verify them. Higher is
-better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and `bECE`.
+## Repository status
 
-### Cross-dataset robustness on polyp segmentation: seen-domain results. Means over five seeds.
-
-| Group | Method | Params (M) | FLOPs (G) | Kvasir-SEG mDice ↑ | Kvasir-SEG mIoU ↑ | Kvasir-SEG B-F1 ↑ | Kvasir-SEG HD95 ↓ | Kvasir-SEG bECE ↓ | CVC-ClinicDB mDice ↑ | CVC-ClinicDB mIoU ↑ | CVC-ClinicDB B-F1 ↑ | CVC-ClinicDB HD95 ↓ | CVC-ClinicDB bECE ↓ |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Prominent State-of-the-art Methods | SANet | 23.8 | 11.3 | 0.904 | 0.847 | 0.868 | 10.1 | 0.030 | 0.916 | 0.859 | 0.881 | 8.8 | 0.026 |
-| Prominent State-of-the-art Methods | MSNet | 27.6 | 17.0 | 0.907 | 0.862 | 0.875 | 9.7 | 0.028 | 0.921 | 0.879 | 0.892 | 8.1 | 0.024 |
-| Prominent State-of-the-art Methods | Polyp-PVT | 25.1 | 10.1 | 0.917 | 0.864 | 0.886 | 8.9 | 0.025 | 0.937 | 0.889 | 0.914 | 6.6 | 0.020 |
-| Prominent State-of-the-art Methods | CTNet | 44.2 | 32.6 | 0.917 | 0.863 | 0.889 | 8.7 | 0.024 | 0.936 | 0.887 | 0.913 | 6.4 | 0.019 |
-| Prominent State-of-the-art Methods | CFA-Net | 25.2 | 55.3 | 0.915 | 0.861 | 0.884 | 8.9 | 0.024 | 0.933 | 0.883 | 0.911 | 6.9 | 0.019 |
-| Prominent State-of-the-art Methods | SAM-Mamba | 103.0 | 423.0 | 0.924 | 0.873 | 0.899 | 8.1 | 0.021 | 0.942 | 0.887 | 0.922 | 6.0 | 0.017 |
-| Lightweight Baseline Methods | U-Net | 16.7 | 73.9 | 0.818 | 0.746 | 0.782 | 16.9 | 0.067 | 0.823 | 0.755 | 0.791 | 15.1 | 0.061 |
-| Lightweight Baseline Methods | UNet++ | 9.1 | 65.9 | 0.821 | 0.743 | 0.789 | 16.4 | 0.064 | 0.794 | 0.729 | 0.768 | 15.8 | 0.063 |
-| Lightweight Baseline Methods | PraNet | 30.4 | 13.1 | 0.898 | 0.840 | 0.861 | 11.3 | 0.041 | 0.899 | 0.849 | 0.872 | 9.4 | 0.035 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | U-Net + CRISP | 16.9 | 74.7 | 0.846 | 0.776 | 0.814 | 14.6 | 0.039 | 0.891 | 0.829 | 0.852 | 11.2 | 0.032 |
-|  | Gain over U-Net |  |  | +2.8 | +3.0 | +3.2 | -2.3 | -0.028 | +6.8 | +7.4 | +6.1 | -3.9 | -0.029 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | UNet++ + CRISP | 9.4 | 66.9 | 0.849 | 0.781 | 0.820 | 14.2 | 0.037 | 0.876 | 0.812 | 0.844 | 11.8 | 0.035 |
-|  | Gain over UNet++ |  |  | +2.8 | +3.8 | +3.1 | -2.2 | -0.027 | +8.2 | +8.3 | +7.6 | -4.0 | -0.028 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | PraNet + CRISP | 31.2 | 13.8 | 0.912 | 0.847 | 0.879 | 9.8 | 0.025 | 0.953 | 0.912 | 0.931 | 6.2 | 0.019 |
-|  | Gain over PraNet |  |  | +1.4 | +0.7 | +1.8 | -1.5 | -0.016 | +5.4 | +6.3 | +5.9 | -3.2 | -0.016 |
-
-### Cross-dataset robustness on polyp segmentation: unseen-domain results. Means over five seeds.
-
-| Group | Method | Params (M) | FLOPs (G) | CVC-300 mDice ↑ | CVC-300 mIoU ↑ | CVC-300 B-F1 ↑ | CVC-300 HD95 ↓ | CVC-300 bECE ↓ | CVC-ColonDB mDice ↑ | CVC-ColonDB mIoU ↑ | CVC-ColonDB B-F1 ↑ | CVC-ColonDB HD95 ↓ | CVC-ColonDB bECE ↓ | ETIS mDice ↑ | ETIS mIoU ↑ | ETIS B-F1 ↑ | ETIS HD95 ↓ | ETIS bECE ↓ |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Prominent State-of-the-art Methods | SANet | 23.8 | 11.3 | 0.888 | 0.815 | 0.843 | 12.7 | 0.036 | 0.753 | 0.670 | 0.714 | 17.8 | 0.058 | 0.750 | 0.654 | 0.707 | 18.6 | 0.062 |
-| Prominent State-of-the-art Methods | MSNet | 27.6 | 17.0 | 0.869 | 0.807 | 0.835 | 13.2 | 0.038 | 0.755 | 0.678 | 0.719 | 17.1 | 0.056 | 0.719 | 0.664 | 0.688 | 19.2 | 0.065 |
-| Prominent State-of-the-art Methods | Polyp-PVT | 25.1 | 10.1 | 0.900 | 0.833 | 0.872 | 11.4 | 0.031 | 0.808 | 0.727 | 0.779 | 14.3 | 0.045 | 0.787 | 0.706 | 0.752 | 15.2 | 0.049 |
-| Prominent State-of-the-art Methods | CTNet | 44.2 | 32.6 | 0.908 | 0.844 | 0.881 | 10.8 | 0.029 | 0.813 | 0.734 | 0.786 | 13.7 | 0.043 | 0.810 | 0.734 | 0.773 | 14.2 | 0.046 |
-| Prominent State-of-the-art Methods | CFA-Net | 25.2 | 55.3 | 0.893 | 0.827 | 0.865 | 11.7 | 0.031 | 0.743 | 0.665 | 0.716 | 17.5 | 0.053 | 0.732 | 0.655 | 0.701 | 18.4 | 0.058 |
-| Prominent State-of-the-art Methods | SAM-Mamba | 103.0 | 423.0 | 0.920 | 0.861 | 0.892 | 9.9 | 0.025 | 0.853 | 0.771 | 0.829 | 11.9 | 0.038 | 0.848 | 0.782 | 0.814 | 11.4 | 0.040 |
-| Lightweight Baseline Methods | U-Net | 16.7 | 73.9 | 0.710 | 0.627 | 0.661 | 21.8 | 0.095 | 0.744 | 0.661 | 0.691 | 18.4 | 0.094 | 0.689 | 0.538 | 0.623 | 23.7 | 0.118 |
-| Lightweight Baseline Methods | UNet++ | 9.1 | 65.9 | 0.707 | 0.624 | 0.668 | 22.1 | 0.091 | 0.731 | 0.648 | 0.684 | 19.2 | 0.090 | 0.704 | 0.556 | 0.636 | 22.4 | 0.110 |
-| Lightweight Baseline Methods | PraNet | 30.4 | 13.1 | 0.871 | 0.797 | 0.834 | 13.0 | 0.051 | 0.779 | 0.704 | 0.728 | 15.8 | 0.079 | 0.727 | 0.571 | 0.671 | 20.4 | 0.101 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | U-Net + CRISP | 16.9 | 74.7 | 0.758 | 0.676 | 0.719 | 17.4 | 0.056 | 0.781 | 0.708 | 0.747 | 14.7 | 0.038 | 0.735 | 0.591 | 0.692 | 18.8 | 0.050 |
-|  | Gain over U-Net |  |  | +4.8 | +4.9 | +5.8 | -4.4 | -0.039 | +3.7 | +4.7 | +5.6 | -3.7 | -0.056 | +4.6 | +5.3 | +6.9 | -4.9 | -0.068 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | UNet++ + CRISP | 9.4 | 66.9 | 0.753 | 0.671 | 0.723 | 17.8 | 0.053 | 0.777 | 0.703 | 0.743 | 15.0 | 0.036 | 0.748 | 0.603 | 0.703 | 17.9 | 0.048 |
-|  | Gain over UNet++ |  |  | +4.6 | +4.7 | +5.5 | -4.3 | -0.038 | +4.6 | +5.5 | +5.9 | -4.2 | -0.054 | +4.4 | +4.7 | +6.7 | -4.5 | -0.062 |
-| Lightweight Baselines Enhanced with CRISP (Ours) | PraNet + CRISP | 31.2 | 13.8 | 0.900 | 0.830 | 0.871 | 10.9 | 0.031 | 0.812 | 0.733 | 0.772 | 12.9 | 0.031 | 0.768 | 0.626 | 0.724 | 16.1 | 0.043 |
-|  | Gain over PraNet |  |  | +2.9 | +3.3 | +3.7 | -2.1 | -0.020 | +3.3 | +2.9 | +4.4 | -2.9 | -0.048 | +4.1 | +5.5 | +5.3 | -4.3 | -0.058 |
-
-Full experiment notes are provided in [docs/experiments.md](docs/experiments.md).
+| Surface | Status |
+|---|---|
+| CRISP training and deployment for U-Net, U-Net++, and PraNet | Implemented and test-gated |
+| Matched `beta=0`, Margin Label Smoothing, and BWCR controls | Implemented for their declared hosts |
+| Global Temperature Scaling | Mechanism implemented; real fitted artifacts are not bundled |
+| Local Temperature Scaling | Intentionally blocked because a target-blind current-protocol definition is not specified |
+| Source and evaluation protocol guards | Implemented; current runs require explicit manifests |
+| Manuscript-result evidence | Incomplete without the external manifests, checkpoints, and raw per-seed artifacts |
 
 ## Installation
 
-Create the Conda environment:
+Python 3.10 is the pinned reference environment in `environment.yml`;
+`pyproject.toml` declares Python `>=3.10`.
 
 ```bash
 conda env create -f environment.yml
@@ -84,168 +68,283 @@ conda activate crisp
 pip install -e .
 ```
 
-Alternatively, install into an existing Python 3.10 environment:
+Alternatively, in an existing compatible environment:
 
 ```bash
 pip install -r requirements.txt
 pip install -e .
 ```
 
-## Dataset Setup
+## Data and membership manifests
 
-Testing dataset: [download link (Google Drive)](https://drive.google.com/file/d/1o8OfBvYE6K-EpDyvzsmMPndnUMwb540R/view).
+The current protocol uses the canonical scientific dataset identities
+`Kvasir-SEG`, `CVC-ClinicDB`, `CVC-300`, `CVC-ColonDB`, and `ETIS`. The storage
+folder aliases `Kvasir` and `ETIS-LaribPolypDB` are accepted and canonicalized;
+they are not the manuscript dataset names.
 
-Training dataset: [download link (Google Drive)](https://drive.google.com/file/d/1lODorfB33jbd-im-qrtUgWnZXxB94F55/view).
-
-Place the extracted files under `data/`:
+The legacy local/debug layout is:
 
 ```text
 data/
-├── TrainDataset/
-│   ├── image/
-│   └── mask/
-└── TestDataset/
-    ├── Kvasir/
-    │   ├── image/
-    │   └── mask/
-    ├── CVC-ClinicDB/
-    │   ├── image/
-    │   └── mask/
-    ├── CVC-300/
-    │   ├── image/
-    │   └── mask/
-    ├── CVC-ColonDB/
-    │   ├── image/
-    │   └── mask/
-    └── ETIS-LaribPolypDB/
-        ├── image/
-        └── mask/
+|-- TrainDataset/
+|   |-- image/ or images/
+|   `-- mask/  or masks/
+`-- TestDataset/
+    |-- Kvasir/
+    |-- CVC-ClinicDB/
+    |-- CVC-300/
+    |-- CVC-ColonDB/
+    `-- ETIS-LaribPolypDB/
 ```
 
-The loader also accepts `images/` and `masks/` folder names. Current-protocol runs
-require explicit source train/validation manifests and one evaluation-membership
-manifest per canonical dataset. Fraction splits and discovered evaluation membership
-are restricted to explicitly non-current debug configurations.
+Current-protocol runs do not derive membership from a random seed, directory
+order, or validation fraction. They require:
 
-Verify the local data tree:
+- an explicit source-root mapping for Kvasir-SEG and CVC-ClinicDB;
+- one explicit source-training manifest;
+- one explicit source-validation manifest; and
+- one explicit evaluation manifest for each of the five canonical datasets.
+
+Each manifest contains one dataset-qualified image/mask stem per line, for
+example `Kvasir-SEG/<image_id>`. The current source count profile validates
+`810 + 495` training samples and `90 + 55` validation samples from Kvasir-SEG
+and CVC-ClinicDB, respectively. Evaluation manifests are validated against
+counts of 100, 62, 60, 380, and 196 in the canonical dataset order above.
+Membership is validated for duplicates, unknown IDs, image-mask completeness,
+disjointness, complement coverage, dataset identity, and normalized-content
+SHA-256.
+
+The retained current-protocol configs declare manifest mode while intentionally
+leaving the source manifest paths `null`; the evaluation map is supplied at
+runtime:
+
+```yaml
+source_data:
+  source_split:
+    mode: manifest
+    count_profile: current_crisp
+    train_manifest: null
+    val_manifest: null
+
+eval:
+  membership_count_profile: current_crisp
+# Supply eval.membership_manifests at runtime.
+```
+
+Supply authorized manifest paths as runtime overrides. The historical
+`thesis_*` filenames are retained for command compatibility; configs declaring
+`protocol_profile: current_crisp` implement the current CRISP protocol.
+
+`bash scripts/verify_data.sh --root "$CRISP_DATA_ROOT" --non-strict` checks only
+the local/debug directory layout and image-mask pairing. It does **not** prove
+that current-protocol membership manifests exist or are valid.
+
+Additional setup details are in [docs/datasets.md](docs/datasets.md).
+
+## Required pretrained artifacts
+
+CRISP training requires strict-load checkpoints for the default frozen teacher
+pool:
+
+- UACANet-L;
+- Polyp-PVT; and
+- the upstream PVT-v2-B2 pretrain used while constructing Polyp-PVT.
+
+Set the teacher paths explicitly:
 
 ```bash
-bash scripts/verify_data.sh --root ./data --non-strict
+export CRISP_TEACHER_UACANET_L_CKPT="$UACANET_L_CHECKPOINT"
+export CRISP_TEACHER_POLYP_PVT_CKPT="$POLYP_PVT_CHECKPOINT"
 ```
 
-## Model Weights
-
-Pretrained and experiment checkpoints can be downloaded from: [download link (Google Drive)](https://drive.google.com/drive/folders/1pTjVGKuJmxK1aGacp7O_WnsbtfngoI2Q?usp=drive_link).
-
-The folder includes ready checkpoints for the retained students and CRISP variants:
-
-- U-Net baseline
-- U-Net + CRISP
-- UNet++ baseline
-- UNet++ + CRISP
-- PraNet baseline
-- PraNet + CRISP
-
-Teacher checkpoints for UACANet-L and Polyp-PVT are also provided. Place the checkpoints under the paths expected by the configs or provide paths through environment variables. For CRISP checkpoints, both the student and projector states are stored.
-
-Model weights are not committed to the repository. Put checkpoints in local paths or provide them through environment variables:
-
-```bash
-export CRISP_TEACHER_UACANET_L_CKPT=/path/to/uacanet_l_checkpoint.pth
-export CRISP_TEACHER_POLYP_PVT_CKPT=/path/to/polyp_pvt_checkpoint.pth
-```
-
-Polyp-PVT also expects the upstream PVT-v2 B2 backbone pretrain file at:
+The Polyp-PVT adapter also expects the PVT-v2-B2 file at
+`1_baseline/Polyp-PVT/pretrained_pth/pvt_v2_b2.pth`. Optional student
+initialization checkpoints can be supplied with:
 
 ```text
-1_baseline/Polyp-PVT/pretrained_pth/pvt_v2_b2.pth
-```
-
-Student initialization checkpoints can be supplied with Hydra overrides:
-
-```bash
-student_init.checkpoint=/path/to/student_checkpoint.pt
+student_init.checkpoint=<student-checkpoint>
 student_init.strict=true
 ```
 
+The following are author-supplied external locations. Their public availability
+and exact contents have not been verified by the repository evidence pipeline;
+verify them before relying on them:
+
+- [training dataset location](https://drive.google.com/file/d/1lODorfB33jbd-im-qrtUgWnZXxB94F55/view)
+- [evaluation dataset location](https://drive.google.com/file/d/1o8OfBvYE6K-EpDyvzsmMPndnUMwb540R/view)
+- [pretrained and experiment artifact location](https://drive.google.com/drive/folders/1pTjVGKuJmxK1aGacp7O_WnsbtfngoI2Q?usp=drive_link)
+
+No artifact SHA-256 values are published here because the referenced bytes were
+not available for verification in this checkout.
+
 ## Training
 
-Train the retained CRISP students (the historical script/config filenames are kept
-for command compatibility):
+Before any current-protocol training command, set `CRISP_DATA_ROOT`,
+`KVASIR_SOURCE_ROOT`, `CVC_CLINICDB_SOURCE_ROOT`, `SOURCE_TRAIN_MANIFEST`, and
+`SOURCE_VAL_MANIFEST` to real local paths. Each source root must identify that
+dataset's paired `image`/`images` and `mask`/`masks` directories. CRISP commands
+additionally require the teacher variables above and a writable output location.
 
 ```bash
-bash scripts/train_thesis_unet_baseline.sh
-bash scripts/train_thesis_unet_crisp.sh
+COMMON_SOURCE_OVERRIDES=(
+  "+source_data.source_split.datasets.Kvasir-SEG.root=$KVASIR_SOURCE_ROOT"
+  "+source_data.source_split.datasets.Kvasir-SEG.image_dir_candidates=[image,images]"
+  "+source_data.source_split.datasets.Kvasir-SEG.mask_dir_candidates=[mask,masks]"
+  "+source_data.source_split.datasets.CVC-ClinicDB.root=$CVC_CLINICDB_SOURCE_ROOT"
+  "+source_data.source_split.datasets.CVC-ClinicDB.image_dir_candidates=[image,images]"
+  "+source_data.source_split.datasets.CVC-ClinicDB.mask_dir_candidates=[mask,masks]"
+  "source_data.source_split.train_manifest=$SOURCE_TRAIN_MANIFEST"
+  "source_data.source_split.val_manifest=$SOURCE_VAL_MANIFEST"
+)
 
-bash scripts/train_thesis_unetpp_baseline.sh
-bash scripts/train_thesis_unetpp_crisp.sh
+# U-Net
+bash scripts/train_thesis_unet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_thesis_unet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
 
-bash scripts/train_thesis_pranet_baseline.sh
-bash scripts/train_thesis_pranet_crisp.sh
+# U-Net++
+bash scripts/train_thesis_unetpp_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_thesis_unetpp_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+
+# PraNet
+bash scripts/train_thesis_pranet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_thesis_pranet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
 ```
 
-Hydra overrides can be appended to any script:
-
-```bash
-bash scripts/train_thesis_unet_crisp.sh \
-  training.batch_size=8 \
-  training.mixed_precision=true \
-  source_data.num_workers=4
-```
+The current experiment configs declare the five-seed protocol
+`{2026, 2027, 2028, 2029, 2030}`. Individual wrapper invocations run the selected
+`seed`; they do not automatically iterate the five values. Runs fail before
+training if required manifests, teacher checkpoints, or other strict artifacts
+are absent or incompatible. Full training is intentionally not run as part of
+repository validation.
 
 ## Evaluation
 
-Evaluate trained checkpoints:
+Evaluation requires a real checkpoint, the data root, and all five exact
+evaluation manifests. Set these variables to real paths before running:
 
 ```bash
-bash scripts/eval_thesis_unet.sh /path/to/checkpoint.pt
-bash scripts/eval_thesis_unetpp.sh /path/to/checkpoint.pt
-bash scripts/eval_thesis_pranet.sh /path/to/checkpoint.pt
+EVAL_MEMBERSHIP_OVERRIDES=(
+  "+eval.membership_manifests.Kvasir-SEG=$KVASIR_SEG_MANIFEST"
+  "+eval.membership_manifests.CVC-ClinicDB=$CVC_CLINICDB_MANIFEST"
+  "+eval.membership_manifests.CVC-300=$CVC_300_MANIFEST"
+  "+eval.membership_manifests.CVC-ColonDB=$CVC_COLONDB_MANIFEST"
+  "+eval.membership_manifests.ETIS=$ETIS_MANIFEST"
+)
+
+CRISP_EVAL_CONFIG=experiment/thesis_unet_crisp \
+  bash scripts/eval_thesis_unet.sh "$CHECKPOINT" "${EVAL_MEMBERSHIP_OVERRIDES[@]}"
 ```
 
-For CRISP checkpoints, evaluation exports both projector-on and projector-off metrics. For baseline checkpoints, the scripts select the matching baseline configuration when the checkpoint path contains `baseline`; otherwise set `CRISP_EVAL_CONFIG` explicitly.
+Use `experiment/thesis_unet_baseline`, `experiment/thesis_unetpp_baseline`,
+`experiment/thesis_unetpp_crisp`, `experiment/thesis_pranet_baseline`, or
+`experiment/thesis_pranet_crisp` with the matching host script and checkpoint.
+CRISP evaluation records projector-on and projector-off metrics; baseline
+evaluation has no projector.
+
+Validation checkpoint selection is exact and order-independent: maximize B-F1;
+among epochs within 0.002 of the global maximum, choose lower bECE, then higher
+mDice, then the earliest epoch.
+
+## Implemented controls
+
+- **Matched `beta=0`:** uses the same student, teachers, target, projector,
+  solver, task objective, schedule, and diagnostics as full CRISP; only the
+  amortization coefficient is zero. Configs exist for U-Net, U-Net++, and PraNet.
+- **Margin Label Smoothing:** adds the binary margin penalty with `m=10` and
+  weight `0.1` to the host baseline objective. It is implemented for U-Net and
+  PraNet and applies to PraNet's final logit while preserving native side
+  supervision.
+- **Boundary Weighted Logit Consistency (BWCR):** uses two independently
+  transformed source views, inverse-aligns their final raw logits, and applies
+  the native linear distance weighting with `lambda_min=0.01`, `lambda_max=1`,
+  and radius `10`. It is implemented for U-Net and PraNet, uses no target-domain
+  labels or target statistics, and introduces no target-time consistency
+  machinery; target inference remains one ordinary student forward pass.
+- **Global Temperature Scaling:** fits a positive scalar on frozen source
+  validation logits in `crisp.scripts.posthoc_calibrate`. The mechanism is
+  available, but no real fitted result artifact is bundled.
+- **Local Temperature Scaling:** the retained target-dependent diagnostic is
+  quarantined. The public/current path raises before output creation because the
+  manuscript does not specify a target-blind application contract.
+
+Control configs are under `configs/experiment/`. U-Net++ Margin Label Smoothing
+and BWCR configs are intentionally absent because those hosts were not declared
+for these controls.
 
 ## Metrics
 
-The evaluator exports:
+The primary reported metrics are:
 
-- `mDice`
-- `mIoU`
-- `B-F1` / `boundary_f1`
-- `HD95`
-- `bECE`
-- `off-bECE`
-- optional `ECE`, `BA-ECE`, `TACE`, global `Brier`/`NLL`, and canonical-support
-  boundary `Brier`/`NLL`
+- `mDice` and `mIoU` for region overlap;
+- `B-F1` for boundary agreement;
+- `HD95` for boundary distance; and
+- `bECE` for boundary-support calibration.
 
-Checkpoint selection prioritizes validation `boundary_f1`, breaks ties by lower validation `bECE`, and then by Dice.
+The evaluator also exposes `off-bECE`, `ECE`, `BA-ECE`, `TACE`, global Brier and
+NLL, and canonical-support boundary Brier and boundary NLL. The bECE support is
+selected per image and pooled across the dataset; boundary Brier/NLL retain the
+fixed canonical 20% support independently of bECE sensitivity settings.
 
-## Repository Structure
+## Reproducibility and provenance
+
+Current runs bind scientific identity to the resolved config SHA-256, Git SHA,
+source manifest hashes, student initialization bytes, and teacher checkpoint
+bytes. Checkpoints link to the exact run ID and selection record. Evaluations
+bind the checkpoint byte SHA-256, evaluation config, mode, dataset identity, and
+exact evaluation-membership SHA-256. Export rows preserve those links and reject
+path-versus-provenance conflicts.
+
+This machinery records and validates real artifacts; it does not turn a config
+or a manuscript table into evidence that a run completed. The exporter emits one
+traceable row per evaluator artifact and does not invent seed aggregation or
+confidence intervals.
+
+## Manuscript-reported results
+
+The compact landing page intentionally omits the large result tables. They are
+available in [docs/experiments.md](docs/experiments.md) and are explicitly marked
+as manuscript-reported values. Complete linked raw run artifacts are not present
+in this repository, so those tables are not marked as independently verified by
+the repository evidence pipeline.
+
+## Repository structure
 
 ```text
 configs/              Hydra experiment, model, data, teacher, and metric configs
-scripts/              Training, evaluation, data verification, and export scripts
+scripts/              Training, evaluation, verification, and export entry points
 src/crisp/            CRISP package source
-src/crisp/data/       Dataset discovery, pairing, and image/mask transforms
-src/crisp/engine/     Training, checkpointing, and evaluation loops
+src/crisp/data/       Dataset membership and image-mask loading
+src/crisp/engine/     Training, checkpoint selection, and evaluation
 src/crisp/metrics/    Segmentation and calibration metrics
-src/crisp/models/     Student/teacher adapters and projector head
-src/crisp/modules/    Boundary, posterior, solver, calibration, and losses
-tests/                Unit, adapter, loader, CLI, and invariant tests
-docs/                 Public method, dataset, and experiment notes
-1_baseline/           Minimal baseline source needed for checkpoint compatibility
+src/crisp/models/     Student, teacher, adapter, and projector modules
+src/crisp/modules/    Boundary, posterior, solver, calibration, and control losses
+tests/                Scientific invariant and integration tests
+docs/                 Method, dataset, and experiment documentation
+1_baseline/           Retained upstream source required for model compatibility
 ```
 
-Large local artifacts such as datasets, checkpoints, logs, outputs, notebooks, figures, and model weights are intentionally not tracked.
+## Citation
 
-## Documentation
+Please cite the current manuscript:
 
-- [Method notes](docs/method.md)
-- [Dataset setup](docs/datasets.md)
-- [Experiment protocol and full tables](docs/experiments.md)
+```bibtex
+@unpublished{vo_crisp,
+  author = {Ngoc-Khue Nguyen Vo and Thanh-Trung Huynh and Huy-Hieu Pham and Viet-Sang Dinh},
+  title = {CRISP: Amortized Boundary Posterior Projection for Calibrated Dense Prediction under Cross-Dataset Shift},
+  note = {Manuscript},
+  url = {https://github.com/Khue-0408/CRISP}
+}
+```
 
-## Citation / License
+A DOI and publication year are intentionally omitted until authoritative
+publication metadata is available. Machine-readable repository metadata is in
+[CITATION.cff](CITATION.cff).
 
-If you use this code, cite the associated CRISP manuscript.
+## License and third-party code
 
-This repository is released under the license in [LICENSE](LICENSE). Third-party baseline source files retain their upstream notices and licenses where included.
+CRISP-authored code is released under the [MIT License](LICENSE). The
+`1_baseline/` tree contains retained upstream implementations needed for model
+and checkpoint compatibility. Upstream license or notice files are preserved
+where they are included (notably UACANet and U-Net++); other retained components
+remain subject to their upstream terms. Review those upstream repositories and
+terms before redistribution or commercial use.

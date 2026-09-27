@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: If you use this software, please cite the CRISP manuscript and repository.
+title: "CRISP: Amortized Boundary Posterior Projection for Calibrated Dense Prediction under Cross-Dataset Shift"
+type: software
+authors:
+  - family-names: Vo
+    given-names: Ngoc-Khue Nguyen
+    orcid: "https://orcid.org/0009-0001-9269-1755"
+  - family-names: Huynh
+    given-names: Thanh-Trung
+    orcid: "https://orcid.org/0000-0003-2027-5362"
+  - family-names: Pham
+    given-names: Huy-Hieu
+    orcid: "https://orcid.org/0000-0003-4851-2518"
+  - family-names: Dinh
+    given-names: Viet-Sang
+    orcid: "https://orcid.org/0000-0002-9254-1327"
+version: 0.1.0
+repository-code: "https://github.com/Khue-0408/CRISP"
+license: MIT
