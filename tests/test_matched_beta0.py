@@ -23,15 +23,15 @@ BETA_OVERRIDE = "\ncrisp:\n  projection:\n    beta: 0.0\n"
 @pytest.mark.parametrize("host", ["unet", "unetpp", "pranet"])
 def test_matched_beta0_config_has_only_beta_scientific_delta(host: str) -> None:
     experiment_dir = ROOT / "configs" / "experiment"
-    full_name = f"thesis_{host}_crisp"
-    matched_name = f"thesis_{host}_matched_beta0"
+    full_name = f"crisp_{host}_crisp"
+    matched_name = f"crisp_{host}_matched_beta0"
     full = (experiment_dir / f"{full_name}.yaml").read_text(encoding="utf-8")
     matched = (experiment_dir / f"{matched_name}.yaml").read_text(encoding="utf-8")
     assert matched.count(BETA_OVERRIDE) == 1
     normalized = matched.replace(matched_name, full_name).replace(BETA_OVERRIDE, "")
     assert normalized == full
     assert "  - /crisp: default\n" in full
-    assert "  - /teacher_pool: thesis_default\n" in full
+    assert "  - /teacher_pool: crisp_default\n" in full
     assert "  - _self_\n" in full
     assert "  use_amortization_loss: true\n" in matched
     assert "  use_projector: true\n" in matched

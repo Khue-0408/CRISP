@@ -42,11 +42,6 @@ condaenv.*.requirements.txt
 /.ai/
 /.agent/
 /.local/
-AGENTS.md
-!/AGENTS.md
-!/src/crisp/AGENTS.md
-!/1_baseline/AGENTS.md
-!/configs/experiment/AGENTS.md
 MEMORY.md
 Pasted text.txt
 CRISP_CONTEXT_*.md

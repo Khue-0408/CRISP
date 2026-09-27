@@ -438,8 +438,8 @@ def test_runtime_pair_identity_is_repeatable_and_batch_order_independent() -> No
 @pytest.mark.parametrize("host", ["unet", "pranet"])
 def test_bwcr_config_is_only_approved_delta_from_matched_baseline(host: str) -> None:
     experiment_dir = ROOT / "configs" / "experiment"
-    baseline_name = f"thesis_{host}_baseline"
-    control_name = f"thesis_{host}_boundary_weighted_logit_consistency"
+    baseline_name = f"crisp_{host}_baseline"
+    control_name = f"crisp_{host}_boundary_weighted_logit_consistency"
     baseline = (experiment_dir / f"{baseline_name}.yaml").read_text(encoding="utf-8")
     control = (experiment_dir / f"{control_name}.yaml").read_text(encoding="utf-8")
     control_block = """
@@ -540,5 +540,5 @@ def test_bwcr_validation_precedes_training_side_effects() -> None:
 def test_no_unetpp_bwcr_config_exists() -> None:
     assert not (
         ROOT
-        / "configs/experiment/thesis_unetpp_boundary_weighted_logit_consistency.yaml"
+        / "configs/experiment/crisp_unetpp_boundary_weighted_logit_consistency.yaml"
     ).exists()

@@ -257,7 +257,7 @@ def test_current_crisp_range_lock_rejects_silent_substitution(
 
 
 def test_checked_in_source_augmentation_config_matches_range_lock() -> None:
-    text = Path("configs/data/thesis_train_test.yaml").read_text(encoding="utf-8")
+    text = Path("configs/data/crisp_train_test.yaml").read_text(encoding="utf-8")
     expected_lines = {
         "image_size: 352",
         "random_hflip: true",

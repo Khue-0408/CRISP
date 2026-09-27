@@ -15,13 +15,9 @@ while true; do
     read -p "Do you wish to download datasets and backbone checkpoints? [y/n]: " yn
     case $yn in
     [Yy]* )
-        curl -c ./cookie -s -L "https://drive.google.com/uc?export=download&id=17Cs2JhKOKwt4usiAYJVJMnXfyZWySn3s" > /dev/null
-        curl -Lb ./cookie "https://drive.google.com/uc?export=download&confirm=`awk '/download/ {print $NF}' ./cookie`&id=17Cs2JhKOKwt4usiAYJVJMnXfyZWySn3s" -o data.zip
-        rm cookie
-        rm -rf data
-        unzip data.zip -d data
-        rm data.zip; 
-        break;;
+        echo "Automatic artifact downloads are disabled in this retained source copy." >&2
+        echo "Consult https://github.com/plemeri/UACANet for current availability." >&2
+        exit 1;;
     [Nn]* ) break;;
       * ) echo "Please answer yes or no.";;
     esac
@@ -31,13 +27,9 @@ while true; do
     read -p "Do you wish to download pretrained model checkpoints? [y/n]: " yn
     case $yn in
     [Yy]* )
-        curl -c ./cookie -s -L "https://drive.google.com/uc?export=download&id=1C5ag5X_gKR1IHW6fVAHdMggu7ilU1XbC" > /dev/null
-        curl -Lb ./cookie "https://drive.google.com/uc?export=download&confirm=`awk '/download/ {print $NF}' ./cookie`&id=1C5ag5X_gKR1IHW6fVAHdMggu7ilU1XbC" -o snapshots.zip
-        rm cookie
-        rm -rf snapshots
-        unzip snapshots.zip -d snapshots
-        rm snapshots.zip; 
-        break;;
+        echo "Automatic artifact downloads are disabled in this retained source copy." >&2
+        echo "Consult https://github.com/plemeri/UACANet for current availability." >&2
+        exit 1;;
     [Nn]* ) break;;
       * ) echo "Please answer yes or no.";;
     esac

@@ -3,7 +3,7 @@
 defaults:
   - /model: pranet
   - /crisp: default
-  - /teacher_pool: thesis_default
+  - /teacher_pool: crisp_default
   - /data@source_data: kvasir_seg
   - /data@eval_data.kvasir: kvasir_test
   - /data@eval_data.cvc_clinicdb: cvc_clinicdb

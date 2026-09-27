@@ -39,7 +39,7 @@ For more Information consult next section (Information and Links).
 
 - data:
     - Train (starts download, size 46.2 MB): https://datasets.simula.no/kvasir-seg/Kvasir-SEG.zip
-    - Test (29.6 MB): https://drive.google.com/file/d/1uP2W2g0iCCS3T6Cf7TPmNdSX4gayOrv2/view?usp=sharing
+    - Test: obtain the dataset from its originating project and follow its access terms.
 
 - models:
     - Different architectures. Each in its own script.

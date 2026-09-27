@@ -390,7 +390,7 @@ def test_boundary_metrics_are_aggregated_globally_over_support() -> None:
     assert abs(metrics["bece"] - 0.2) < 1e-6
 
 
-def test_metric_export_contains_thesis_aliases() -> None:
+def test_metric_export_contains_crisp_aliases() -> None:
     model = _ConstantLogitModel(logit_value=3.0)
     config = {
         "crisp": {"boundary": {"sigma_b": 6.0}, "projection": {"alpha_min": 0.5, "alpha_max": 1.75}},

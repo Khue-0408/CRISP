@@ -21,9 +21,9 @@ def _value(text: str, key: str, indent: int = 2) -> str:
 )
 @pytest.mark.parametrize("variant", ["baseline", "crisp"])
 def test_canonical_experiment_training_values(host: str, batch_size: int, variant: str) -> None:
-    text = (EXPERIMENTS / f"thesis_{host}_{variant}.yaml").read_text(encoding="utf-8")
+    text = (EXPERIMENTS / f"crisp_{host}_{variant}.yaml").read_text(encoding="utf-8")
     assert f"  - /model: {host}\n" in text
-    assert "  - /data@source_data: thesis_train_test\n" in text
+    assert "  - /data@source_data: crisp_train_test\n" in text
     assert int(_value(text, "batch_size")) == batch_size
     assert int(_value(text, "total_epochs")) == 120
     assert _value(text, "epochs") == "${training.total_epochs}"
@@ -46,15 +46,15 @@ def test_canonical_experiment_training_values(host: str, batch_size: int, varian
 
 @pytest.mark.parametrize(("host", "batch_size"), [("unet", 16), ("unetpp", 14), ("pranet", 12)])
 def test_canonical_baseline_crisp_training_parity(host: str, batch_size: int) -> None:
-    baseline = (EXPERIMENTS / f"thesis_{host}_baseline.yaml").read_text(encoding="utf-8")
-    crisp = (EXPERIMENTS / f"thesis_{host}_crisp.yaml").read_text(encoding="utf-8")
+    baseline = (EXPERIMENTS / f"crisp_{host}_baseline.yaml").read_text(encoding="utf-8")
+    crisp = (EXPERIMENTS / f"crisp_{host}_crisp.yaml").read_text(encoding="utf-8")
     for key in ("batch_size", "total_epochs", "lr_student", "weight_decay", "mixed_precision", "gradient_clip_norm"):
         assert _value(baseline, key) == _value(crisp, key)
     assert int(_value(baseline, "batch_size")) == batch_size
 
 
 def test_canonical_data_resolution_and_solver_config() -> None:
-    data = (ROOT / "configs" / "data" / "thesis_train_test.yaml").read_text(encoding="utf-8")
+    data = (ROOT / "configs" / "data" / "crisp_train_test.yaml").read_text(encoding="utf-8")
     crisp = (ROOT / "configs" / "crisp" / "default.yaml").read_text(encoding="utf-8")
     assert re.search(r"(?m)^image_size: 352$", data)
     assert _value(crisp, "newton_steps") == "3"

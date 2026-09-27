@@ -211,7 +211,7 @@ def test_checkpoint_payload_includes_reproducibility_state(tmp_path: Path) -> No
     assert checkpoint["selection_metric"] == SELECTION_METRIC
 
 
-def test_thesis_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path) -> None:
+def test_crisp_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path) -> None:
     """The current schedule should use 25 baseline epochs then ramp lambda/beta."""
     config = _base_crisp_config(tmp_path)
     config["crisp"]["schedule"] = {

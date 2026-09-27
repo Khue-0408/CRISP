@@ -16,21 +16,21 @@ from crisp.protocol import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT_CONFIGS = {
-    "thesis_unet_baseline.yaml",
-    "thesis_unet_crisp.yaml",
-    "thesis_unet_matched_beta0.yaml",
-    "thesis_unet_margin_label_smoothing.yaml",
-    "thesis_unet_boundary_weighted_logit_consistency.yaml",
-    "thesis_unetpp_baseline.yaml",
-    "thesis_unetpp_crisp.yaml",
-    "thesis_unetpp_matched_beta0.yaml",
-    "thesis_pranet_baseline.yaml",
-    "thesis_pranet_crisp.yaml",
-    "thesis_pranet_matched_beta0.yaml",
-    "thesis_pranet_margin_label_smoothing.yaml",
-    "thesis_pranet_boundary_weighted_logit_consistency.yaml",
-    "thesis_pranet_teacher_robustness_equal.yaml",
-    "thesis_pranet_teacher_robustness_weighted.yaml",
+    "crisp_unet_baseline.yaml",
+    "crisp_unet_crisp.yaml",
+    "crisp_unet_matched_beta0.yaml",
+    "crisp_unet_margin_label_smoothing.yaml",
+    "crisp_unet_boundary_weighted_logit_consistency.yaml",
+    "crisp_unetpp_baseline.yaml",
+    "crisp_unetpp_crisp.yaml",
+    "crisp_unetpp_matched_beta0.yaml",
+    "crisp_pranet_baseline.yaml",
+    "crisp_pranet_crisp.yaml",
+    "crisp_pranet_matched_beta0.yaml",
+    "crisp_pranet_margin_label_smoothing.yaml",
+    "crisp_pranet_boundary_weighted_logit_consistency.yaml",
+    "crisp_pranet_teacher_robustness_equal.yaml",
+    "crisp_pranet_teacher_robustness_weighted.yaml",
 }
 SOURCE_CONTRACT = """source_data:
   local_split: null
@@ -255,7 +255,7 @@ def test_current_guards_run_before_output_or_model_side_effects() -> None:
 
 def test_all_retained_current_configs_opt_into_guard_and_debug_configs_do_not() -> None:
     experiment_dir = ROOT / "configs/experiment"
-    assert {path.name for path in experiment_dir.glob("thesis_*.yaml")} == CURRENT_CONFIGS
+    assert {path.name for path in experiment_dir.glob("crisp_*.yaml")} == CURRENT_CONFIGS
     for name in CURRENT_CONFIGS:
         text = (experiment_dir / name).read_text(encoding="utf-8")
         assert "protocol_profile: current_crisp" in text

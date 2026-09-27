@@ -15,8 +15,8 @@ component.
 
 ## U-Net++
 
-- Retained source: `1_baseline/UNet++`
-- Upstream license copy: [`1_baseline/UNet++/LICENSE`](1_baseline/UNet++/LICENSE)
+- Retained source: `1_baseline/U-Net++`
+- Upstream license copy: [`1_baseline/U-Net++/LICENSE`](1_baseline/U-Net++/LICENSE)
 
 Consult the included upstream license before using or redistributing this
 component.
@@ -47,6 +47,6 @@ project; consult the upstream repository for its current terms.
 - Upstream project: [GeorgeBatch/kvasir-seg](https://github.com/GeorgeBatch/kvasir-seg)
 
 No explicit license file was identified in the upstream repository during this
-release audit. Redistribution and use rights should therefore be reviewed
-against the upstream project before reuse outside this research repository.
-This notice does not grant permission.
+release audit. The current CRISP U-Net retains substantial implementation
+lineage and similarity to that source. No permission is inferred;
+redistribution or reuse requires review of rights from the upstream project.

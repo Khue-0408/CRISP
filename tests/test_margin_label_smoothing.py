@@ -191,8 +191,8 @@ def test_invalid_control_fails_before_training_side_effects() -> None:
 @pytest.mark.parametrize("host", ["unet", "pranet"])
 def test_current_control_config_has_only_approved_baseline_delta(host: str) -> None:
     experiment_dir = ROOT / "configs" / "experiment"
-    baseline_name = f"thesis_{host}_baseline"
-    control_name = f"thesis_{host}_margin_label_smoothing"
+    baseline_name = f"crisp_{host}_baseline"
+    control_name = f"crisp_{host}_margin_label_smoothing"
     baseline = (experiment_dir / f"{baseline_name}.yaml").read_text(encoding="utf-8")
     control = (experiment_dir / f"{control_name}.yaml").read_text(encoding="utf-8")
     control_block = """

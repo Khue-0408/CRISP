@@ -27,7 +27,7 @@ METRICS = {
 def _write_result(
     root: Path,
     *,
-    experiment: str = "thesis_pranet_crisp",
+    experiment: str = "crisp_pranet_crisp",
     seed_dir: str = "seed_2026",
     dataset: str = "CVC-300",
     filename: str = "projector_on.json",
@@ -43,7 +43,7 @@ def test_actual_nested_evaluator_path_and_metrics_are_preserved(tmp_path: Path) 
     path = _write_result(tmp_path)
     assert _collect_metric_files(tmp_path) == [{
         "source_file": str(path),
-        "experiment": "thesis_pranet_crisp",
+        "experiment": "crisp_pranet_crisp",
         "seed": 2026,
         "dataset": "CVC-300",
         "mode": "projector_on",
@@ -60,7 +60,7 @@ def test_dataset_names_with_hyphens_are_not_tokenized(tmp_path: Path, dataset: s
 def test_projector_modes_remain_distinct_and_summary_is_excluded(tmp_path: Path) -> None:
     _write_result(tmp_path, filename="projector_on.json")
     _write_result(tmp_path, filename="projector_off.json")
-    summary = tmp_path / "thesis_pranet_crisp" / "seed_2026" / "summary.json"
+    summary = tmp_path / "crisp_pranet_crisp" / "seed_2026" / "summary.json"
     summary.write_text(json.dumps({"results": [{"dataset": "CVC-300"}]}), encoding="utf-8")
     records = _collect_metric_files(tmp_path)
     assert len(records) == 2
@@ -69,10 +69,10 @@ def test_projector_modes_remain_distinct_and_summary_is_excluded(tmp_path: Path)
 
 
 def test_baseline_projector_off_only_remains_valid(tmp_path: Path) -> None:
-    _write_result(tmp_path, experiment="thesis_pranet_baseline", filename="projector_off.json")
+    _write_result(tmp_path, experiment="crisp_pranet_baseline", filename="projector_off.json")
     records = _collect_metric_files(tmp_path)
     assert len(records) == 1
-    assert records[0]["experiment"] == "thesis_pranet_baseline"
+    assert records[0]["experiment"] == "crisp_pranet_baseline"
     assert records[0]["mode"] == "projector_off"
 
 
@@ -86,7 +86,7 @@ def test_malformed_seed_directory_fails(tmp_path: Path, seed_dir: str) -> None:
 @pytest.mark.parametrize("missing", ["experiment", "dataset"])
 def test_missing_path_identity_fails(tmp_path: Path, missing: str) -> None:
     parts = (["seed_2026", "CVC-300"] if missing == "experiment"
-             else ["thesis_pranet_crisp", "seed_2026"])
+             else ["crisp_pranet_crisp", "seed_2026"])
     path = tmp_path.joinpath(*parts) / "projector_on.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(METRICS), encoding="utf-8")

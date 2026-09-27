@@ -30,20 +30,20 @@ TEACHER_NAMES = ["uacanet_l", "polyp_pvt", "sammamba"]
 
 
 def test_robustness_configs_keep_default_two_teacher_pool_unchanged() -> None:
-    default = (ROOT / "configs/teacher_pool/thesis_default.yaml").read_text(encoding="utf-8")
-    robust = (ROOT / "configs/teacher_pool/thesis_robustness.yaml").read_text(encoding="utf-8")
+    default = (ROOT / "configs/teacher_pool/crisp_default.yaml").read_text(encoding="utf-8")
+    robust = (ROOT / "configs/teacher_pool/crisp_robustness.yaml").read_text(encoding="utf-8")
     assert [line.removeprefix("    name: ") for line in default.splitlines()
             if line.startswith("    name: ")] == TEACHER_NAMES[:2]
     assert [line.removeprefix("    name: ") for line in robust.splitlines()
             if line.startswith("    name: ")] == TEACHER_NAMES
     assert robust.count("  - enabled: true") == 3
-    weighted = (ROOT / "configs/experiment/thesis_pranet_teacher_robustness_weighted.yaml").read_text(encoding="utf-8")
-    equal = (ROOT / "configs/experiment/thesis_pranet_teacher_robustness_equal.yaml").read_text(encoding="utf-8")
-    assert "/teacher_pool: thesis_robustness" in weighted
+    weighted = (ROOT / "configs/experiment/crisp_pranet_teacher_robustness_weighted.yaml").read_text(encoding="utf-8")
+    equal = (ROOT / "configs/experiment/crisp_pranet_teacher_robustness_equal.yaml").read_text(encoding="utf-8")
+    assert "/teacher_pool: crisp_robustness" in weighted
     assert "logit_noise_std: 1.0" in weighted
     assert "seed_keys: [seed, dataset_name, image_id]" in weighted
     assert "aggregation: weighted" in weighted
-    assert equal.replace("thesis_pranet_teacher_robustness_equal", "thesis_pranet_teacher_robustness_weighted").replace(
+    assert equal.replace("crisp_pranet_teacher_robustness_equal", "crisp_pranet_teacher_robustness_weighted").replace(
         "aggregation: equal_average", "aggregation: weighted",
     ) == weighted
 

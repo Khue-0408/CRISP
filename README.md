@@ -1,5 +1,7 @@
 # CRISP
 
+[![CI](https://github.com/Khue-0408/CRISP/actions/workflows/ci.yml/badge.svg)](https://github.com/Khue-0408/CRISP/actions/workflows/ci.yml)
+
 **CRISP: Amortized Boundary Posterior Projection for Calibrated Dense Prediction under Cross-Dataset Shift**
 
 CRISP is the official research repository for constrained boundary-posterior
@@ -14,11 +16,12 @@ PraNet students; strict source and evaluation membership controls; segmentation
 and calibration metrics; checkpoint selection; and byte-linked run, checkpoint,
 evaluation, and export provenance.
 
-The codebase implements the method and its protocol gates. Datasets, exact
-membership manifests, pretrained artifacts, trained checkpoints, and complete
-raw per-seed metric artifacts are not committed to this repository.
-Consequently, the manuscript statement that the exact split files are released
-with the code is not currently satisfied by this repository.
+The codebase implements the method and its protocol gates. Exact historical
+membership manifests underlying the reported experiments are not included in
+this release. Current-protocol execution therefore requires explicit
+user-supplied manifests that are validated against the locked membership
+contract. Datasets, pretrained artifacts, trained checkpoints, and complete raw
+per-seed metric artifacts are not committed to this repository.
 
 ## Method
 
@@ -62,9 +65,9 @@ deployment retains the student and amortized projector.*
 | CRISP training and deployment for U-Net, U-Net++, and PraNet | Implemented and test-gated |
 | Matched `beta=0`, Margin Label Smoothing, and BWCR controls | Implemented for their declared hosts |
 | Global Temperature Scaling | Mechanism implemented; real fitted artifacts are not bundled |
-| Local Temperature Scaling | Intentionally blocked because a target-blind current-protocol definition is not specified |
+| Local Temperature Scaling | Not part of the current reproducible control set; the historical target-dependent implementation is quarantined |
 | Source and evaluation protocol guards | Implemented; current runs require explicit manifests |
-| Manuscript-result evidence | Incomplete without the external manifests, checkpoints, and raw per-seed artifacts |
+| Historical exact-run replay | Not bundled; manuscript-reported tables are separate from the executable provenance machinery |
 
 ## Installation
 
@@ -90,6 +93,17 @@ The current protocol uses the canonical scientific dataset identities
 `Kvasir-SEG`, `CVC-ClinicDB`, `CVC-300`, `CVC-ColonDB`, and `ETIS`. The storage
 folder aliases `Kvasir` and `ETIS-LaribPolypDB` are accepted and canonicalized;
 they are not the manuscript dataset names.
+
+Obtain each dataset from its originating project and follow its access terms:
+
+- [Kvasir-SEG - Simula Open Datasets](https://datasets.simula.no/kvasir-seg/)
+- [CVC-ClinicDB - CVC/Grand Challenge](https://polyp.grand-challenge.org/CVCClinicDB/)
+- [CVC-ColonDB - CVC database index](https://pages.cvc.uab.es/CVC-Colon/index.php/databases/)
+- [CVC-300 / EndoSceneStill - CVC](https://pages.cvc.uab.es/CVC-Colon/index.php/databases/cvc-endoscenestill/)
+- [ETIS-LaribPolypDB - Grand Challenge](https://polyp.grand-challenge.org/EtisLarib/)
+
+The CVC pages may require registration or acceptance of the dataset terms. This
+repository does not redistribute dataset files.
 
 The legacy local/debug layout is:
 
@@ -140,8 +154,7 @@ eval:
 # Supply eval.membership_manifests at runtime.
 ```
 
-Supply authorized manifest paths as runtime overrides. The historical
-`thesis_*` filenames are retained for command compatibility; configs declaring
+Supply authorized manifest paths as runtime overrides. Configs declaring
 `protocol_profile: current_crisp` implement the current CRISP protocol.
 
 `bash scripts/verify_data.sh --root "$CRISP_DATA_ROOT" --non-strict` checks only
@@ -175,16 +188,13 @@ student_init.checkpoint=<student-checkpoint>
 student_init.strict=true
 ```
 
-The following are author-supplied external locations. Their public availability
-and exact contents have not been verified by the repository evidence pipeline;
-verify them before relying on them:
-
-- [training dataset location](https://drive.google.com/file/d/1lODorfB33jbd-im-qrtUgWnZXxB94F55/view)
-- [evaluation dataset location](https://drive.google.com/file/d/1o8OfBvYE6K-EpDyvzsmMPndnUMwb540R/view)
-- [pretrained and experiment artifact location](https://drive.google.com/drive/folders/1pTjVGKuJmxK1aGacp7O_WnsbtfngoI2Q?usp=drive_link)
-
-No artifact SHA-256 values are published here because the referenced bytes were
-not available for verification in this checkout.
+The required model artifacts originate from the upstream
+[UACANet](https://github.com/plemeri/UACANet),
+[Polyp-PVT](https://github.com/DengPingFan/Polyp-PVT), and
+[PVT/PVTv2](https://github.com/whai362/PVT) projects. Consult those projects for
+their current artifact instructions and terms. This repository does not assert
+that any particular upstream checkpoint remains downloadable, and it publishes
+no artifact SHA-256 value without the corresponding bytes.
 
 ## Training
 
@@ -207,24 +217,31 @@ COMMON_SOURCE_OVERRIDES=(
 )
 
 # U-Net
-bash scripts/train_thesis_unet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
-bash scripts/train_thesis_unet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_unet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_unet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
 
 # U-Net++
-bash scripts/train_thesis_unetpp_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
-bash scripts/train_thesis_unetpp_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_unetpp_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_unetpp_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
 
 # PraNet
-bash scripts/train_thesis_pranet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
-bash scripts/train_thesis_pranet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_pranet_baseline.sh "${COMMON_SOURCE_OVERRIDES[@]}"
+bash scripts/train_crisp_pranet_crisp.sh "${COMMON_SOURCE_OVERRIDES[@]}"
 ```
 
 The current experiment configs declare the five-seed protocol
-`{2026, 2027, 2028, 2029, 2030}`. Individual wrapper invocations run the selected
-`seed`; they do not automatically iterate the five values. Runs fail before
-training if required manifests, teacher checkpoints, or other strict artifacts
-are absent or incompatible. Full training is intentionally not run as part of
-repository validation.
+`{2026, 2027, 2028, 2029, 2030}`. Run all five seeds for one retained host and
+mode with, for example:
+
+```bash
+bash scripts/run_crisp_five_seeds.sh unet crisp "${COMMON_SOURCE_OVERRIDES[@]}"
+```
+
+The runner passes `seed=<value>` explicitly, forwards later Hydra overrides,
+and stops on the first failed run. It neither resumes nor aggregates runs. Runs
+fail before training if required manifests, teacher checkpoints, or other
+strict artifacts are absent or incompatible. Full training is intentionally
+not run as part of repository validation.
 
 ## Evaluation
 
@@ -240,13 +257,13 @@ EVAL_MEMBERSHIP_OVERRIDES=(
   "+eval.membership_manifests.ETIS=$ETIS_MANIFEST"
 )
 
-CRISP_EVAL_CONFIG=experiment/thesis_unet_crisp \
-  bash scripts/eval_thesis_unet.sh "$CHECKPOINT" "${EVAL_MEMBERSHIP_OVERRIDES[@]}"
+CRISP_EVAL_CONFIG=experiment/crisp_unet_crisp \
+  bash scripts/eval_crisp_unet.sh "$CHECKPOINT" "${EVAL_MEMBERSHIP_OVERRIDES[@]}"
 ```
 
-Use `experiment/thesis_unet_baseline`, `experiment/thesis_unetpp_baseline`,
-`experiment/thesis_unetpp_crisp`, `experiment/thesis_pranet_baseline`, or
-`experiment/thesis_pranet_crisp` with the matching host script and checkpoint.
+Use `experiment/crisp_unet_baseline`, `experiment/crisp_unetpp_baseline`,
+`experiment/crisp_unetpp_crisp`, `experiment/crisp_pranet_baseline`, or
+`experiment/crisp_pranet_crisp` with the matching host script and checkpoint.
 CRISP evaluation records projector-on and projector-off metrics; baseline
 evaluation has no projector.
 
@@ -272,9 +289,9 @@ mDice, then the earliest epoch.
 - **Global Temperature Scaling:** fits a positive scalar on frozen source
   validation logits in `crisp.scripts.posthoc_calibrate`. The mechanism is
   available, but no real fitted result artifact is bundled.
-- **Local Temperature Scaling:** the retained target-dependent diagnostic is
-  quarantined. The public/current path raises before output creation because the
-  manuscript does not specify a target-blind application contract.
+- **Local Temperature Scaling:** this is not part of the current reproducible
+  control set. A retained historical target-dependent implementation remains
+  quarantined and is exercised only by leakage and invariant tests.
 
 Control configs are under `configs/experiment/`. U-Net++ Margin Label Smoothing
 and BWCR configs are intentionally absent because those hosts were not declared

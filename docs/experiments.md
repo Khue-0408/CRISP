@@ -28,41 +28,40 @@ the remaining 55 epochs the full-objective window.
 
 Baseline configs:
 
-- `configs/experiment/thesis_unet_baseline.yaml`
-- `configs/experiment/thesis_unetpp_baseline.yaml`
-- `configs/experiment/thesis_pranet_baseline.yaml`
+- `configs/experiment/crisp_unet_baseline.yaml`
+- `configs/experiment/crisp_unetpp_baseline.yaml`
+- `configs/experiment/crisp_pranet_baseline.yaml`
 
 CRISP configs:
 
-- `configs/experiment/thesis_unet_crisp.yaml`
-- `configs/experiment/thesis_unetpp_crisp.yaml`
-- `configs/experiment/thesis_pranet_crisp.yaml`
+- `configs/experiment/crisp_unet_crisp.yaml`
+- `configs/experiment/crisp_unetpp_crisp.yaml`
+- `configs/experiment/crisp_pranet_crisp.yaml`
 
 Training scripts:
 
 ```bash
-bash scripts/train_thesis_unet_baseline.sh
-bash scripts/train_thesis_unet_crisp.sh
-bash scripts/train_thesis_unetpp_baseline.sh
-bash scripts/train_thesis_unetpp_crisp.sh
-bash scripts/train_thesis_pranet_baseline.sh
-bash scripts/train_thesis_pranet_crisp.sh
+bash scripts/train_crisp_unet_baseline.sh
+bash scripts/train_crisp_unet_crisp.sh
+bash scripts/train_crisp_unetpp_baseline.sh
+bash scripts/train_crisp_unetpp_crisp.sh
+bash scripts/train_crisp_pranet_baseline.sh
+bash scripts/train_crisp_pranet_crisp.sh
 ```
 
 Evaluation scripts:
 
 ```bash
-bash scripts/eval_thesis_unet.sh /path/to/checkpoint.pt
-bash scripts/eval_thesis_unetpp.sh /path/to/checkpoint.pt
-bash scripts/eval_thesis_pranet.sh /path/to/checkpoint.pt
+bash scripts/eval_crisp_unet.sh /path/to/checkpoint.pt
+bash scripts/eval_crisp_unetpp.sh /path/to/checkpoint.pt
+bash scripts/eval_crisp_pranet.sh /path/to/checkpoint.pt
 ```
 
 Default reporting metrics include `mDice`, `mIoU`, `B-F1`, `HD95`, `bECE`, and `off-bECE`.
 
-Local Temperature Scaling is excluded from the current reproducible control set
-pending a manuscript-backed target-blind definition. No traceable artifact in
-this repository links the manuscript Table 9 Local TS row to a target-blind
-pipeline, so that row requires removal or replacement before submission.
+Local Temperature Scaling is not part of the current reproducible control set.
+The historical target-dependent implementation is quarantined and cannot be
+selected by current-protocol evaluation.
 
 ## Full Result Tables
 
@@ -94,6 +93,10 @@ Higher is better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and
 
 ### Cross-dataset robustness on polyp segmentation: unseen-domain results. Means over five seeds.
 
+Retained baseline/CRISP rows reproduce manuscript-reported five-seed mean ± SD
+values. The underlying per-seed artifacts are not bundled in this release, so
+these values are not labeled repository-verified.
+
 | Group | Method | Params (M) | FLOPs (G) | CVC-300 mDice ↑ | CVC-300 mIoU ↑ | CVC-300 B-F1 ↑ | CVC-300 HD95 ↓ | CVC-300 bECE ↓ | CVC-ColonDB mDice ↑ | CVC-ColonDB mIoU ↑ | CVC-ColonDB B-F1 ↑ | CVC-ColonDB HD95 ↓ | CVC-ColonDB bECE ↓ | ETIS mDice ↑ | ETIS mIoU ↑ | ETIS B-F1 ↑ | ETIS HD95 ↓ | ETIS bECE ↓ |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Prominent State-of-the-art Methods | SANet | 23.8 | 11.3 | 0.888 | 0.815 | 0.843 | 12.7 | 0.036 | 0.753 | 0.670 | 0.714 | 17.8 | 0.058 | 0.750 | 0.654 | 0.707 | 18.6 | 0.062 |
@@ -102,14 +105,14 @@ Higher is better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and
 | Prominent State-of-the-art Methods | CTNet | 44.2 | 32.6 | 0.908 | 0.844 | 0.881 | 10.8 | 0.029 | 0.813 | 0.734 | 0.786 | 13.7 | 0.043 | 0.810 | 0.734 | 0.773 | 14.2 | 0.046 |
 | Prominent State-of-the-art Methods | CFA-Net | 25.2 | 55.3 | 0.893 | 0.827 | 0.865 | 11.7 | 0.031 | 0.743 | 0.665 | 0.716 | 17.5 | 0.053 | 0.732 | 0.655 | 0.701 | 18.4 | 0.058 |
 | Prominent State-of-the-art Methods | SAM-Mamba | 103.0 | 423.0 | 0.920 | 0.861 | 0.892 | 9.9 | 0.025 | 0.853 | 0.771 | 0.829 | 11.9 | 0.038 | 0.848 | 0.782 | 0.814 | 11.4 | 0.040 |
-| Baseline students | U-Net | 16.7 | 73.9 | 0.710 | 0.627 | 0.661 | 21.8 | 0.095 | 0.744 | 0.661 | 0.691 | 18.4 | 0.094 | 0.689 | 0.538 | 0.623 | 23.7 | 0.118 |
-| Baseline students | U-Net++ | 9.1 | 65.9 | 0.707 | 0.624 | 0.668 | 22.1 | 0.091 | 0.731 | 0.648 | 0.684 | 19.2 | 0.090 | 0.704 | 0.556 | 0.636 | 22.4 | 0.110 |
-| Baseline students | PraNet | 30.4 | 13.1 | 0.871 | 0.797 | 0.834 | 13.0 | 0.051 | 0.779 | 0.704 | 0.728 | 15.8 | 0.079 | 0.727 | 0.571 | 0.671 | 20.4 | 0.101 |
-| Retained students with CRISP | U-Net + CRISP | 16.9 | 74.7 | 0.758 | 0.676 | 0.719 | 17.4 | 0.056 | 0.781 | 0.708 | 0.747 | 14.7 | 0.038 | 0.735 | 0.591 | 0.692 | 18.8 | 0.050 |
+| Baseline students | U-Net | 16.7 | 73.9 | 0.710 ± 0.015 | 0.627 ± 0.017 | 0.661 ± 0.019 | 21.8 ± 1.8 | 0.095 ± 0.009 | 0.744 ± 0.012 | 0.661 ± 0.014 | 0.691 ± 0.016 | 18.4 ± 1.5 | 0.094 ± 0.008 | 0.689 ± 0.021 | 0.538 ± 0.024 | 0.623 ± 0.026 | 23.7 ± 2.4 | 0.118 ± 0.012 |
+| Baseline students | U-Net++ | 9.1 | 65.9 | 0.707 ± 0.014 | 0.624 ± 0.016 | 0.668 ± 0.018 | 22.1 ± 1.9 | 0.091 ± 0.009 | 0.731 ± 0.013 | 0.648 ± 0.015 | 0.684 ± 0.017 | 19.2 ± 1.6 | 0.090 ± 0.008 | 0.704 ± 0.019 | 0.556 ± 0.022 | 0.636 ± 0.024 | 22.4 ± 2.2 | 0.110 ± 0.011 |
+| Baseline students | PraNet | 30.4 | 13.1 | 0.871 ± 0.008 | 0.797 ± 0.010 | 0.834 ± 0.011 | 13.0 ± 1.0 | 0.051 ± 0.005 | 0.779 ± 0.011 | 0.704 ± 0.013 | 0.728 ± 0.014 | 15.8 ± 1.3 | 0.079 ± 0.007 | 0.727 ± 0.016 | 0.571 ± 0.019 | 0.671 ± 0.020 | 20.4 ± 1.9 | 0.101 ± 0.010 |
+| Retained students with CRISP | U-Net + CRISP | 16.9 | 74.7 | 0.758 ± 0.011 | 0.676 ± 0.013 | 0.719 ± 0.015 | 17.4 ± 1.3 | 0.056 ± 0.006 | 0.781 ± 0.009 | 0.708 ± 0.011 | 0.747 ± 0.013 | 14.7 ± 1.1 | 0.038 ± 0.005 | 0.735 ± 0.016 | 0.591 ± 0.019 | 0.692 ± 0.020 | 18.8 ± 1.8 | 0.050 ± 0.007 |
 |  | Gain over U-Net |  |  | +4.8 | +4.9 | +5.8 | -4.4 | -0.039 | +3.7 | +4.7 | +5.6 | -3.7 | -0.056 | +4.6 | +5.3 | +6.9 | -4.9 | -0.068 |
-| Retained students with CRISP | U-Net++ + CRISP | 9.4 | 66.9 | 0.753 | 0.671 | 0.723 | 17.8 | 0.053 | 0.777 | 0.703 | 0.743 | 15.0 | 0.036 | 0.748 | 0.603 | 0.703 | 17.9 | 0.048 |
+| Retained students with CRISP | U-Net++ + CRISP | 9.4 | 66.9 | 0.753 ± 0.010 | 0.671 ± 0.012 | 0.723 ± 0.014 | 17.8 ± 1.4 | 0.053 ± 0.006 | 0.777 ± 0.009 | 0.703 ± 0.011 | 0.743 ± 0.013 | 15.0 ± 1.2 | 0.036 ± 0.005 | 0.748 ± 0.014 | 0.603 ± 0.017 | 0.703 ± 0.019 | 17.9 ± 1.7 | 0.048 ± 0.007 |
 |  | Gain over U-Net++ |  |  | +4.6 | +4.7 | +5.5 | -4.3 | -0.038 | +4.6 | +5.5 | +5.9 | -4.2 | -0.054 | +4.4 | +4.7 | +6.7 | -4.5 | -0.062 |
-| Retained students with CRISP | PraNet + CRISP | 31.2 | 13.8 | 0.900 | 0.830 | 0.871 | 10.9 | 0.031 | 0.812 | 0.733 | 0.772 | 12.9 | 0.031 | 0.768 | 0.626 | 0.724 | 16.1 | 0.043 |
+| Retained students with CRISP | PraNet + CRISP | 31.2 | 13.8 | 0.900 ± 0.006 | 0.830 ± 0.008 | 0.871 ± 0.009 | 10.9 ± 0.8 | 0.031 ± 0.004 | 0.812 ± 0.008 | 0.733 ± 0.010 | 0.772 ± 0.011 | 12.9 ± 1.0 | 0.031 ± 0.004 | 0.768 ± 0.012 | 0.626 ± 0.015 | 0.724 ± 0.016 | 16.1 ± 1.5 | 0.043 ± 0.006 |
 |  | Gain over PraNet |  |  | +2.9 | +3.3 | +3.7 | -2.1 | -0.020 | +3.3 | +2.9 | +4.4 | -2.9 | -0.048 | +4.1 | +5.5 | +5.3 | -4.3 | -0.058 |
 
 ## Qualitative Figures

@@ -3,7 +3,7 @@
 defaults:
   - /model: unet
   - /crisp: default
-  - /teacher_pool: thesis_default
+  - /teacher_pool: crisp_default
   - /data@source_data: local_train_test
   - /eval: metrics
   - _self_

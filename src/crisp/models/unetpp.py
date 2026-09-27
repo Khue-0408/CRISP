@@ -1,4 +1,4 @@
-"""Baseline-compatible UNet++ host wrapper."""
+"""Baseline-compatible U-Net++ host wrapper."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from crisp.models.base import BaseSegmentationModel, SegmentationOutput
 
 
 class VGGBlock(nn.Module):
-    """VGG-style block matching ``1_baseline/UNet++`` key names."""
+    """VGG-style block matching ``1_baseline/U-Net++`` key names."""
 
     def __init__(self, in_channels: int, middle_channels: int, out_channels: int) -> None:
         super().__init__()
@@ -31,10 +31,10 @@ class VGGBlock(nn.Module):
 
 class UNetPP(BaseSegmentationModel):
     """
-    UNet++ wrapper using the canonical baseline architecture and keyspace.
+    U-Net++ wrapper using the canonical baseline architecture and keyspace.
 
-    The layer names mirror ``1_baseline/UNet++/src/ML_Pipeline/network.py`` so
-    ``1_baseline/UNet++/output/models/model.pth`` can load without remapping.
+    The layer names mirror ``1_baseline/U-Net++/src/ML_Pipeline/network.py`` so
+    ``1_baseline/U-Net++/output/models/model.pth`` can load without remapping.
     """
 
     def __init__(

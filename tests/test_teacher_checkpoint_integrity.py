@@ -32,7 +32,7 @@ def test_valid_sam_like_class_with_empty_checkpoint_fails(monkeypatch) -> None:
 def test_robustness_config_without_sam_environment_has_no_artifact(monkeypatch) -> None:
     monkeypatch.delenv("CRISP_SAMMAMBA_CLASS", raising=False)
     monkeypatch.delenv("CRISP_SAMMAMBA_CKPT", raising=False)
-    config_path = Path(__file__).resolve().parents[1] / "configs/teacher_pool/thesis_robustness.yaml"
+    config_path = Path(__file__).resolve().parents[1] / "configs/teacher_pool/crisp_robustness.yaml"
     teacher = yaml.safe_load(config_path.read_text(encoding="utf-8"))["teachers"][2]
     assert teacher["enabled"] is True and teacher["name"] == "sammamba"
     assert teacher["model_config"]["class_path"] == '${oc.env:CRISP_SAMMAMBA_CLASS,""}'
