@@ -46,6 +46,13 @@ it preserves the hard decision at probability threshold 0.5. Any geometry change
 therefore comes from training-time learning, not from threshold changes during
 deployment. See [the method notes](docs/method.md) for the implementation map.
 
+![CRISP training and deployment overview](docs/ch3_arc.png)
+
+*CRISP overview figure from the manuscript. The teacher icons denote a generic
+M-teacher pool; the default experiments use M=2 with UACANet-L and Polyp-PVT.
+Teachers, boundary weighting, and the local solver are training-only, while
+deployment retains the student and amortized projector.*
+
 ## Repository status
 
 | Surface | Status |
@@ -306,6 +313,23 @@ available in [docs/experiments.md](docs/experiments.md) and are explicitly marke
 as manuscript-reported values. Complete linked raw run artifacts are not present
 in this repository, so those tables are not marked as independently verified by
 the repository evidence pipeline.
+
+## Qualitative examples
+
+![Representative unseen-domain qualitative comparison](docs/ch4_qual_unseen.png)
+
+*Representative unseen-domain qualitative comparison from the manuscript.
+Examples were selected after evaluation using baseline-difficulty, lesion-size,
+and contrast strata, independently of the CRISP improvement magnitude.*
+
+![Seen-domain qualitative comparison](docs/ch4_qual_seen.png)
+
+*Seen-domain qualitative comparison on Kvasir-SEG and CVC-ClinicDB from the
+manuscript, using the same predeclared selection rule as the unseen-domain panel.*
+
+These are static manuscript figures included for visual reference. The current
+repository does not yet contain the complete linked raw artifact-generation
+pipeline required to independently regenerate them.
 
 ## Repository structure
 
