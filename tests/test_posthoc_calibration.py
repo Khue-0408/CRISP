@@ -2,6 +2,7 @@
 
 import runpy
 import sys
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -102,3 +103,12 @@ def test_public_calibration_entry_blocks_local_ts_before_artifacts(
     assert str(exc.value) == LOCAL_TS_PROTOCOL_BLOCK_MESSAGE
     assert not output_dir.exists()
     assert list(tmp_path.rglob("*.json")) == []
+
+
+def test_posthoc_target_evaluation_has_no_polypgen_or_implicit_suite_default() -> None:
+    source = (Path(__file__).resolve().parents[1] / "src/crisp/scripts/posthoc_calibrate.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'config.get("eval_datasets", ["colondb", "etis", "polypgen"])' not in source
+    assert "requires an explicit nonempty eval_datasets list" in source
+    assert 'bnd_cfg.get("sigma_b", 6.0)' in source

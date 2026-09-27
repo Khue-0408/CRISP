@@ -252,6 +252,9 @@ class Trainer:
         # Method flags.
         method = config.get("method", {})
         self.use_crisp = method.get("use_crisp", False)
+        self.method_name = str(
+            method.get("name") or ("crisp" if self.use_crisp else "baseline")
+        )
         self.use_projector = method.get("use_projector", False)
         self.use_teachers = method.get("use_teachers", False)
         self.use_amortization_loss = method.get(
@@ -910,7 +913,7 @@ class Trainer:
         logger.info(
             "Starting training: device=%s method=%s epochs=%d train_batches=%s val_batches=%s output_dir=%s",
             self.device,
-            "crisp" if self.use_crisp else "baseline",
+            self.method_name,
             self.epochs,
             train_batches,
             val_batches,

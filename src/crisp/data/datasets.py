@@ -310,7 +310,7 @@ def resolve_dataset_dirs(
     """
     Resolve image/mask directories with singular/plural fallback support.
 
-    This keeps the original paper path working while allowing local mode to
+    This keeps the current dataset layout working while allowing local mode to
     accept both ``image|mask`` and ``images|masks`` directory names.
     """
     root = Path(root)

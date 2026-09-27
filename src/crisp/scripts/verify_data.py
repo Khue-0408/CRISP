@@ -35,7 +35,7 @@ def _count_pairs(root: Path, dataset_name: str, split: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Verify CRISP local data layout without enforcing thesis benchmark counts."
+            "Verify CRISP local data layout without enforcing current-protocol counts."
         )
     )
     parser.add_argument("--root", default="./data", help="Data root containing TrainDataset/TestDataset.")

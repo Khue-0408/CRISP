@@ -1,8 +1,8 @@
 """
 Post-hoc calibration utilities.
 
-The paper compares CRISP against several post-hoc calibration baselines
-such as temperature scaling, local temperature scaling, and selective scaling. [file:1]
+The current manuscript compares CRISP against post-hoc calibration controls
+including temperature scaling and local temperature scaling.
 
 This file reserves the module boundary for those methods so they can be added
 without polluting the core CRISP implementation.

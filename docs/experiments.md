@@ -4,7 +4,7 @@ This document records the public experiment protocol and result tables for CRISP
 
 ## Experiment Protocol
 
-Retained thesis students:
+Retained CRISP students:
 
 - U-Net
 - UNet++
@@ -15,7 +15,7 @@ Default CRISP teacher pool:
 - UACANet-L
 - Polyp-PVT
 
-Default input size is 352x352. The thesis schedule uses 120 epochs:
+Default input size is 352x352. The current CRISP schedule uses 120 epochs:
 
 - Phase I: 25 epochs baseline student warmup
 - Phase II: 65 epochs full CRISP objective
@@ -55,6 +55,10 @@ bash scripts/eval_thesis_pranet.sh /path/to/checkpoint.pt
 Default reporting metrics include `mDice`, `mIoU`, `B-F1`, `HD95`, `bECE`, and `off-bECE`.
 
 ## Full Result Tables
+
+The values below are manuscript-reported results. Complete linked raw run
+artifacts are not currently present in this repository, so these tables are not
+marked as empirically verified here.
 
 Higher is better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and `bECE`.
 

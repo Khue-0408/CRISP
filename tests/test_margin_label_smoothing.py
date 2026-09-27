@@ -227,3 +227,24 @@ def test_resolved_config_provenance_exposes_and_hashes_control() -> None:
     }
     assert record["config_sha256"] != baseline_record["config_sha256"]
     assert record["scientific_identity_sha256"] != baseline_record["scientific_identity_sha256"]
+
+
+def test_training_log_uses_margin_control_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _control_config()
+    config["training"]["epochs"] = 0
+    config["output_dir"] = str(tmp_path)
+    trainer = Trainer(
+        _FixedLogitStudent(), None, None, config, run_record={"run_id": "synthetic"}
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(
+        trainer_module.logger,
+        "info",
+        lambda message, *args: messages.append(message % args),
+    )
+
+    trainer.fit([], None)
+
+    assert any("method=margin_label_smoothing" in message for message in messages)

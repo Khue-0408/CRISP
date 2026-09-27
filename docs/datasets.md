@@ -1,6 +1,6 @@
 # Dataset Setup
 
-CRISP uses a simple TrainDataset/TestDataset layout for local and thesis
+CRISP uses a TrainDataset/TestDataset layout for current and local-debug
 experiments.
 
 ```text
@@ -19,14 +19,16 @@ data/
 Each test dataset folder must contain an image folder and a mask folder. Folder
 names may be singular or plural.
 
-Protocol:
+Current protocol:
 
-- Training uses all matched image/mask pairs in `TrainDataset`.
-- Validation is created deterministically from `TrainDataset` using
-  `val_fraction=0.1` by default.
-- Evaluation auto-discovers valid immediate child folders under `TestDataset`.
+- Source training and validation membership must be supplied by explicit manifests.
+- Evaluation membership must be supplied by one explicit manifest for each of the
+  five canonical datasets.
 - Missing folders, empty datasets, and image/mask pairing mismatches fail loudly.
-- Exact benchmark counts are not enforced by default.
+- Current-protocol runs enforce canonical dataset identities and exact counts.
+
+Fraction-derived source splits and automatically discovered evaluation membership
+remain available only to configs that do not opt into `protocol_profile: current_crisp`.
 
 Check the data tree with:
 

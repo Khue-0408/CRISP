@@ -6,7 +6,7 @@ This module provides:
 - file logging,
 - consistent metric formatting.
 
-Clean logging is critical for reproduction and debugging.
+Clean logging is critical for reproducibility and debugging.
 """
 
 from __future__ import annotations

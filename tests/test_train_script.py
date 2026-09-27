@@ -1,5 +1,5 @@
 """
-Entry-point wiring tests for paper-faithful training discipline.
+Entry-point wiring tests for current-protocol training discipline.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ def test_teacher_pool_group_is_supported(tmp_path: Path) -> None:
 
 
 def test_teacher_pool_shorthand_model_schema_is_supported(tmp_path: Path) -> None:
-    """Thesis teacher pools use name/model shorthand plus optional model_config."""
+    """Current teacher pools use name/model shorthand plus optional model_config."""
     ckpt_path = tmp_path / "teacher.pt"
     torch.save({"model_state_dict": UNet().state_dict()}, ckpt_path)
 

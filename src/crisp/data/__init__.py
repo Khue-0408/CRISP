@@ -1,5 +1,5 @@
 """
-Data loading subpackage for CRISP replication.
+Data loading subpackage for CRISP.
 
 This subpackage contains:
 - dataset definitions,

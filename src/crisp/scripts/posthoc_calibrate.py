@@ -10,8 +10,8 @@ It operates strictly as a *post-hoc* calibrator:
 - does not invoke CRISP’s detached local solver at inference,
 - does not change geometry training code paths.
 
-Supported post-hoc baselines (minimal faithful)
-----------------------------------------------
+Implemented post-hoc baselines
+------------------------------
 - global temperature scaling (TS),
 - boundary temperature scaling (bTS) on top-k w_b pixels,
 - selective temperature scaling (STS),
@@ -183,7 +183,7 @@ def main(cfg: DictConfig) -> None:
 
     crisp_cfg = config.get("crisp", {})
     bnd_cfg = crisp_cfg.get("boundary", {})
-    sigma_b = float(bnd_cfg.get("sigma_b", 3.0))
+    sigma_b = float(bnd_cfg.get("sigma_b", 6.0))
     boundary_mode = str(bnd_cfg.get("mode", "gaussian_soft_field"))
 
     eval_cfg = config.get("eval", {})
@@ -233,7 +233,11 @@ def main(cfg: DictConfig) -> None:
 
     # Optional: evaluate these post-hoc calibrators on target datasets using frozen checkpoint logits.
     if bool(config.get("posthoc_eval_targets", False)):
-        datasets = config.get("eval_datasets", ["colondb", "etis", "polypgen"])
+        datasets = config.get("eval_datasets")
+        if not isinstance(datasets, (list, tuple)) or not datasets:
+            raise ValueError(
+                "Target post-hoc evaluation requires an explicit nonempty eval_datasets list."
+            )
         for ds_name in datasets:
             try:
                 ds_config = _resolve_eval_dataset_config(config, ds_name)

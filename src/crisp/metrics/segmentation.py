@@ -1,15 +1,15 @@
 """
 Segmentation geometry metrics.
 
-The main metrics needed for the CRISP replication are:
+The main metrics used by the current CRISP protocol are:
 - Dice,
 - IoU,
 - Boundary-F1,
 - HD95.
 
-These metrics are used to quantify both global overlap and boundary geometry. [file:1]
+These metrics quantify both global overlap and boundary geometry.
 
-CRISP reference: instruct.md §16.
+The scientific definitions are governed by the current CRISP manuscript.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ class UACANet(BaseSegmentationModel):
     """
     UACANet adapter backed by ``1_baseline/UACANet/lib/UACANet.py``.
 
-    UACANet is thesis-default teacher-side code. The adapter accepts tensors and
+    UACANet is a default CRISP teacher. The adapter accepts tensors and
     internally builds the sample dict expected by the baseline implementation.
     """
 

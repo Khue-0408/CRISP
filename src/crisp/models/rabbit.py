@@ -1,9 +1,9 @@
 """
 RaBiT backbone wrapper.
 
-This is an interface for the RaBiT architecture used in the paper's
-cross-domain evaluation suite. Uses a ResNet-based encoder with a
-reverse-attention boundary decoder.
+This is a diagnostic interface shaped like a boundary-refinement host. It is
+not the genuine external RaBiT architecture and is not valid current-protocol
+evidence.
 """
 
 from __future__ import annotations
@@ -39,13 +39,13 @@ class _BoundaryRefinement(nn.Module):
 
 class RaBiT(BaseSegmentationModel):
     """
-    Wrapper class for a RaBiT-style backbone.
+    Diagnostic wrapper for a RaBiT-style backbone.
 
     This scaffold reserves a stable interface so the rest of the codebase
     does not depend on architecture-specific internals.
 
     Uses a ResNet-34 encoder with a simple boundary-aware decoder.
-    For a full RaBiT reproduction, replace with the official architecture.
+    Publication experiments require a separately validated genuine RaBiT adapter.
 
     Parameters
     ----------

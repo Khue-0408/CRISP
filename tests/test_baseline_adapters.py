@@ -84,7 +84,7 @@ def test_real_baseline_checkpoint_loads_strictly(
 
 
 def test_real_teacher_ensemble_outputs_aligned_probability_maps() -> None:
-    """The thesis teacher pool should load strictly and emit aligned probabilities."""
+    """The current teacher pool should load strictly and emit aligned probabilities."""
     uacanet_ckpt = REPO_ROOT / "1_baseline/UACANet/snapshots/UACANet-L/latest.pth"
     polyp_pvt_ckpt = REPO_ROOT / "1_baseline/Polyp-PVT/model_pth/PolypPVT.pth"
     missing = [path for path in (uacanet_ckpt, polyp_pvt_ckpt) if not path.exists()]

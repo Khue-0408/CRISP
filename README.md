@@ -22,13 +22,15 @@ CRISP is a research codebase for boundary-posterior projection in binary polyp s
 - UACANet-L and Polyp-PVT teacher pool for CRISP training.
 - Detached boundary-posterior projection targets with bounded amortized projector output.
 - Projector-on and projector-off evaluation for CRISP checkpoints.
-- TrainDataset/TestDataset data protocol with deterministic validation splits.
+- Explicit source and evaluation membership manifests for current-protocol runs.
 - Geometry and calibration metrics for medical image segmentation reporting.
 - Checkpoint-compatible adapters for retained student and teacher backbones.
 
-## Main Results
+## Manuscript Results
 
-CRISP improves lightweight polyp segmentors across seen and unseen domains, with consistent gains on overlap, boundary geometry, and boundary-local calibration metrics. Higher is better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and `bECE`.
+The tables below transcribe manuscript-reported results; this repository does not
+currently contain the complete raw run artifacts required to verify them. Higher is
+better for `mDice`, `mIoU`, and `B-F1`; lower is better for `HD95` and `bECE`.
 
 ### Cross-dataset robustness on polyp segmentation: seen-domain results. Means over five seeds.
 
@@ -120,7 +122,10 @@ data/
         └── mask/
 ```
 
-The loader also accepts `images/` and `masks/` folder names. Training reads all matched pairs under `TrainDataset` and creates a deterministic validation split with `val_fraction=0.1` by default. Evaluation auto-discovers valid child datasets under `TestDataset`.
+The loader also accepts `images/` and `masks/` folder names. Current-protocol runs
+require explicit source train/validation manifests and one evaluation-membership
+manifest per canonical dataset. Fraction splits and discovered evaluation membership
+are restricted to explicitly non-current debug configurations.
 
 Verify the local data tree:
 
@@ -165,7 +170,8 @@ student_init.strict=true
 
 ## Training
 
-Train the retained thesis students:
+Train the retained CRISP students (the historical script/config filenames are kept
+for command compatibility):
 
 ```bash
 bash scripts/train_thesis_unet_baseline.sh
@@ -209,7 +215,8 @@ The evaluator exports:
 - `HD95`
 - `bECE`
 - `off-bECE`
-- optional `ECE`, `BA-ECE`, `TACE`, `Brier`, and `NLL`
+- optional `ECE`, `BA-ECE`, `TACE`, global `Brier`/`NLL`, and canonical-support
+  boundary `Brier`/`NLL`
 
 Checkpoint selection prioritizes validation `boundary_f1`, breaks ties by lower validation `bECE`, and then by Dice.
 
@@ -239,6 +246,6 @@ Large local artifacts such as datasets, checkpoints, logs, outputs, notebooks, f
 
 ## Citation / License
 
-If you use this code, cite the associated CRISP thesis or paper when available.
+If you use this code, cite the associated CRISP manuscript.
 
 This repository is released under the license in [LICENSE](LICENSE). Third-party baseline source files retain their upstream notices and licenses where included.

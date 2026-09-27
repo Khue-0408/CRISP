@@ -14,6 +14,7 @@ from crisp.utils.paths import resolve_path
 
 CURRENT_PROTOCOL_PROFILE = "current_crisp"
 CURRENT_EVALUATION_SUITE = frozenset(CURRENT_EVALUATION_COUNTS)
+CURRENT_RETAINED_STUDENTS = frozenset({"unet", "unetpp", "pranet"})
 
 
 def _uses_current_protocol(config: Mapping[str, Any]) -> bool:
@@ -47,6 +48,16 @@ def validate_current_training_protocol(config: Mapping[str, Any]) -> None:
     """Reject implicit or fraction-derived source membership for current runs."""
     if not _uses_current_protocol(config):
         return
+
+    model = config.get("model")
+    if isinstance(model, Mapping) and model.get("name") is not None:
+        model_name = str(model["name"]).lower()
+        if model_name not in CURRENT_RETAINED_STUDENTS:
+            raise ValueError(
+                "Current CRISP protocol execution is limited to the retained U-Net, "
+                f"U-Net++, and PraNet students; received model.name={model_name!r}. "
+                "External stronger-host adapters require separate validation."
+            )
 
     source_data = _require_mapping(config.get("source_data"), "source_data")
     source_split = _require_mapping(source_data.get("source_split"), "source_data.source_split")

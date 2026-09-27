@@ -5,9 +5,9 @@ CRISP training combines:
 - projected task fitting over the calibrated probability p̃(u),
 - off-boundary identity regularization on alpha_hat,
 - Dice loss on the calibrated output,
-- amortization consistency between alpha_hat and detached alpha*. [file:1]
+- amortization consistency between alpha_hat and detached alpha*.
 
-CRISP reference: instruct.md §12.
+The scientific definitions are governed by the current CRISP manuscript.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def dice_loss(
 
     CRISP reference
     ---------------
-    instruct.md §12:
+    Current CRISP task-loss contract:
       L_Dice(p̃, y) = 1 - (2 Σ_u p̃(u) y(u) + ε_d) / (Σ_u p̃(u) + Σ_u y(u) + ε_d)
     """
     # Flatten spatial dimensions for numerically stable summation.
@@ -163,14 +163,14 @@ def crisp_task_loss(
 
     CRISP reference
     ---------------
-    instruct.md §12:
+    Current CRISP amortization-loss contract:
       L_task = mean_u [ (1 + λ w_b(u)) BCE(p̃(u), t_eps(u))
                         + μ (1-w_b(u))(α̂(u)-1)² ]
               + η L_Dice(p̃, y)
 
     Notes
     -----
-    The default behavior reproduces the paper loss exactly. The optional flags
+    The default behavior implements the current CRISP loss contract. Optional flags
     are used only by config-driven ablations so the main CRISP objective remains
     unchanged.
     """
@@ -301,7 +301,7 @@ def crisp_total_loss(
     amort_loss_dict:
         Dictionary produced by ``crisp_amortization_loss``.
     beta_value:
-        Weight applied to the amortization term (thesis default 0.35).
+        Weight applied to the amortization term (current default 0.35).
 
     Returns
     -------
@@ -310,7 +310,7 @@ def crisp_total_loss(
 
     CRISP reference
     ---------------
-    instruct.md §12: L_CRISP = L_task + β L_amort.
+    Current CRISP contract: L_CRISP = L_task + β L_amort.
     """
     total = task_loss_dict["task_loss"] + beta_value * amort_loss_dict["amort_loss"]
 

@@ -2,7 +2,7 @@
 Unit tests for the detached local projection solver.
 
 This is one of the most critical correctness tests in the repository because
-alpha* supervision directly shapes the amortized projector. [file:1]
+alpha* supervision directly shapes the amortized projector.
 """
 
 import math

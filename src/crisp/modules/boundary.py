@@ -6,10 +6,10 @@ w_b(u) from the annotation boundary. The paper defines:
 
 w_b(u) = exp(-d(u, ∂y)^2 / (2 * sigma_b^2)),
 
-where d(u, ∂y) is the Euclidean distance from pixel u to the mask boundary. [file:1]
+where d(u, ∂y) is the Euclidean distance from pixel u to the mask boundary.
 
 The soft field is central because CRISP localizes calibration intervention near
-the boundary rather than across the entire image. [file:1]
+the boundary rather than across the entire image.
 """
 
 from __future__ import annotations
@@ -105,9 +105,9 @@ def compute_boundary_weight(
         Binary segmentation mask [B, 1, H, W].
     sigma_b:
         Spread parameter controlling how far the boundary influence extends.
-        Default sigma_b = 6.0 per the updated thesis benchmark contract.
+        Default sigma_b = 6.0 under the current CRISP protocol.
     mode:
-        Boundary weighting mode. The default and paper-supported mode is a
+        Boundary weighting mode. The current-protocol mode is a
         Gaussian soft field. Alternative modes are included for ablations.
 
     Returns
@@ -117,7 +117,7 @@ def compute_boundary_weight(
 
     CRISP reference
     ---------------
-    instruct.md §3.1: w_b(u) = exp(-d(u,∂y)² / (2 σ_b²))
+    Current CRISP contract: w_b(u) = exp(-d(u,∂y)² / (2 σ_b²))
     """
     dist = compute_distance_to_boundary(mask)  # [B,1,H,W]
 

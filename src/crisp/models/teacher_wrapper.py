@@ -2,7 +2,7 @@
 Teacher model wrappers and ensemble execution helpers.
 
 Teachers are used only during training to form the boundary-local posterior target.
-At inference, teachers are not used. [file:1]
+At inference, teachers are not used.
 
 """
 

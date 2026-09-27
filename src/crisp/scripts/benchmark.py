@@ -6,7 +6,7 @@ This script is intended to support:
 - peak memory measurement,
 - train-time throughput diagnostics.
 
-It is useful when reproducing the compute profile section.
+It is useful when measuring the compute profile section.
 """
 
 from __future__ import annotations

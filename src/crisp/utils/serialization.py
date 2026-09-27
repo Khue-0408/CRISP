@@ -1,7 +1,7 @@
 """
 Serialization helpers for JSON, CSV, and YAML artifacts.
 
-The replication package should export:
+The CRISP implementation exports:
 - per-run metrics,
 - aggregated tables,
 - config snapshots,
@@ -14,8 +14,6 @@ import csv
 import json
 from pathlib import Path
 from typing import Any, Dict, List
-
-import yaml
 
 
 def save_json(path: Path, data: Dict[str, Any]) -> None:
@@ -52,6 +50,8 @@ def save_yaml(path: Path, data: Dict[str, Any]) -> None:
     This is used for resolved config snapshots so training/evaluation runs keep
     a human-readable record of the exact composed experiment configuration.
     """
+    import yaml
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:

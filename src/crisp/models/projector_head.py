@@ -5,9 +5,9 @@ This module implements the lightweight head that predicts the spatial inverse-te
 field α̂_φ(u) from decoder features and student logits. In the paper,
 the head is a two-layer 3x3 convolutional block with 64 hidden channels, GroupNorm,
 GELU, and a final 1x1 convolution, operating on the supplied feature grid and
-upsampled to logit resolution. [file:1]
+upsampled to logit resolution.
 
-CRISP reference: instruct.md §10.
+The architecture follows the current CRISP projector contract.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class CRISPProjectorHead(nn.Module):
 
     CRISP reference
     ---------------
-    instruct.md §10:
+    Current CRISP projector contract:
       α̂(u) = α_min + (α_max - α_min) · σ(a_φ(F_θ(x)(u), z(u)))
       Two-layer 3×3 conv block, 64 hidden channels, GroupNorm, GELU, 1×1 conv.
       Predicts on the supplied feature grid and is bilinearly upsampled.
@@ -67,7 +67,7 @@ class CRISPProjectorHead(nn.Module):
             )
         if norm.lower() != "groupnorm":
             raise ValueError(
-                "CRISPProjectorHead currently supports only GroupNorm, matching instruct.md §10."
+                "CRISPProjectorHead supports only GroupNorm under the current CRISP protocol."
             )
         if num_groups <= 0 or hidden_channels % num_groups != 0:
             raise ValueError(

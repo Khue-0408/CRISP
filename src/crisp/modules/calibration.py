@@ -4,7 +4,7 @@ Calibration-specific helper functions used during training.
 This module provides the restricted calibrated family mapping:
   p̃(u) = sigmoid(α̂(u) · z(u))
 
-CRISP reference: instruct.md §6.
+The scientific definitions are governed by the current CRISP manuscript.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def calibrate_logits_with_alpha(
 
     CRISP reference
     ---------------
-    instruct.md §6: Q(z(u)) = { sigmoid(α z(u)) : α ∈ [α_min, α_max] }.
-    instruct.md §10: p̃(u) = sigmoid(α̂(u) · z(u)).
+    Current CRISP contract: Q(z(u)) = { sigmoid(α z(u)) : α ∈ [α_min, α_max] }.
+    The deployed probability is p̃(u) = sigmoid(α̂(u) · z(u)).
     """
     return torch.sigmoid(alpha_hat * logits)

@@ -3,13 +3,13 @@ Detached local projection solver for CRISP.
 
 The CRISP local projection problem finds alpha*(u) in [alpha_min, alpha_max]
 that best fits the target t*(u) through the restricted calibrated family
-sigma(alpha * z(u)), while preserving identity away from the boundary. [file:1]
+sigma(alpha * z(u)), while preserving identity away from the boundary.
 
 The paper states that after mild numerical stabilization this problem is
 one-dimensional, strongly convex, and can be solved with a clipped closed-form
-seed followed by safeguarded Newton or short bisection refinement. [file:1]
+seed followed by safeguarded Newton or short bisection refinement.
 
-CRISP reference: instruct.md §7, §8, §9.
+The scientific definitions are governed by the current CRISP manuscript.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def stabilize_logits_for_solver(
 
     CRISP reference
     ---------------
-    instruct.md §8:
+    Current CRISP projection contract:
       z_clip(u) = clip(z(u), -Z_max, Z_max)
       z̃(u) = sign(z_clip) · max(|z_clip|, ζ)
     z̃ is used only in the local solver. The forward path still uses raw z.
@@ -81,7 +81,7 @@ def closed_form_seed(
 
     CRISP reference
     ---------------
-    instruct.md §9: alpha0 = clamp(logit(t_eps) / z̃, alpha_min, alpha_max).
+    Current CRISP contract: alpha0 = clamp(logit(t_eps) / z̃, alpha_min, alpha_max).
     """
     logit_t = safe_logit(clipped_target)  # logit(t_eps)
     alpha_seed = logit_t / stabilized_logits  # element-wise
@@ -121,7 +121,7 @@ def projection_gradient(
 
     CRISP reference
     ---------------
-    instruct.md §9:
+    Current CRISP solver contract:
       g(α; z̃, t, w) = (1 + λw)(σ(αz̃) - t)z̃ + 2μ(1-w)(α - 1)
     """
     sig = torch.sigmoid(alpha * stabilized_logits)
@@ -248,9 +248,8 @@ def solve_alpha_star(
 
     CRISP reference
     ---------------
-    instruct.md §7: alpha*(u) = argmin_{α∈[α_min,α_max]} L_proj(α).
-    instruct.md §9: safeguarded Newton + bisection.
-    instruct.md §13: alpha_star must be detached.
+    Current CRISP contract: alpha*(u) = argmin_{α∈[α_min,alpha_max]} L_proj(α).
+    The solver uses safeguarded Newton plus bisection, and alpha_star is detached.
     """
     if alpha_min >= alpha_max:
         raise ValueError(

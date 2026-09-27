@@ -5,7 +5,7 @@ These tests cover the remaining end-to-end invariants not exercised by the
 math-only unit tests:
 - the trainer can execute one CRISP step with explicit detached alpha_star
   supervision,
-- paper-faithful configs can require source validation explicitly,
+- current-protocol configs can require source validation explicitly,
 - checkpoints preserve enough state for reproducible resume/audit.
 """
 
@@ -153,7 +153,7 @@ def test_trainer_solver_fallback_matches_manuscript(tmp_path: Path) -> None:
 
 
 def test_trainer_requires_validation_when_configured(tmp_path: Path) -> None:
-    """Paper-faithful configs should fail if source validation is missing."""
+    """Current-protocol configs should fail if source validation is missing."""
     config = _base_crisp_config(tmp_path)
     config["training"]["require_validation"] = True
 
@@ -212,7 +212,7 @@ def test_checkpoint_payload_includes_reproducibility_state(tmp_path: Path) -> No
 
 
 def test_thesis_schedule_keeps_phase_i_baseline_then_ramps_crisp(tmp_path: Path) -> None:
-    """Updated thesis schedule should use 25 baseline epochs then ramp lambda/beta."""
+    """The current schedule should use 25 baseline epochs then ramp lambda/beta."""
     config = _base_crisp_config(tmp_path)
     config["crisp"]["schedule"] = {
         "enabled": True,

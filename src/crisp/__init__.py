@@ -1,5 +1,5 @@
 """
-Top-level package for the CRISP replication scaffold.
+Top-level package for the CRISP implementation.
 
 This package contains:
 - data loading and preprocessing utilities,
@@ -9,8 +9,8 @@ This package contains:
 - metric computation and result export utilities.
 
 The package is structured to support:
-1. minimal faithful replication of the binary segmentation setting,
-2. clean ablations of individual CRISP components,
+1. the current binary segmentation protocol,
+2. controlled ablations of individual CRISP components,
 3. future extension to additional backbones and tasks.
 """
 

@@ -3,7 +3,7 @@ Teacher posterior aggregation for CRISP.
 
 During training, CRISP uses a teacher set {T_m} whose probability maps are combined
 into a boundary-local teacher posterior p_T(u). The paper instantiates p_T(u)
-through an entropy-and-agreement weighted barycenter. [file:1]
+through an entropy-and-agreement weighted barycenter.
 
 """
 

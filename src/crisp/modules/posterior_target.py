@@ -6,9 +6,9 @@ CRISP defines the boundary-local posterior target:
 t*(u) = (y(u) + lambda * w_b(u) * p_T(u)) / (1 + lambda * w_b(u)).
 
 This target reduces to the hard label away from the boundary and becomes a
-teacher-informed soft target near the interface. [file:1]
+teacher-informed soft target near the interface.
 
-CRISP reference: instruct.md §5, §8.
+The scientific definitions are governed by the current CRISP manuscript.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def compute_boundary_posterior_target(
 
     CRISP reference
     ---------------
-    instruct.md §5:
+    Current CRISP posterior-target contract:
       t*(u) = (y(u) + λ w_b(u) p_T(u)) / (1 + λ w_b(u))
     """
     if mask.shape != boundary_weight.shape or mask.shape != teacher_posterior.shape:
@@ -79,6 +79,6 @@ def clip_posterior_target(
 
     CRISP reference
     ---------------
-    instruct.md §8: t_eps(u) = clip(t*(u), eps, 1-eps).
+    Current CRISP contract: t_eps(u) = clip(t*(u), eps, 1-eps).
     """
     return target.clamp(eps_target, 1.0 - eps_target)

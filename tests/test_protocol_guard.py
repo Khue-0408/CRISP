@@ -138,6 +138,15 @@ def test_current_source_accepts_explicit_manifest_contract(tmp_path: Path) -> No
     validate_current_training_protocol(_valid_source_config(tmp_path))
 
 
+def test_current_protocol_rejects_unverified_stronger_host_scaffold(
+    tmp_path: Path,
+) -> None:
+    config = _valid_source_config(tmp_path)
+    config["model"] = {"name": "rabbit"}
+    with pytest.raises(ValueError, match="External stronger-host adapters require"):
+        validate_current_training_protocol(config)
+
+
 def test_debug_fraction_mode_remains_available() -> None:
     validate_current_training_protocol(
         {"source_data": {"local_split": {"val_fraction": 0.1}}}

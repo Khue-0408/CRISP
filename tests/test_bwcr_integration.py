@@ -491,6 +491,30 @@ def test_resolved_provenance_hash_distinguishes_bwcr_from_baseline() -> None:
     ]
 
 
+def test_training_log_uses_bwcr_control_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _control_config()
+    config["training"]["epochs"] = 0
+    config["output_dir"] = str(tmp_path)
+    trainer = Trainer(
+        _TinyStudent(), None, None, config, run_record={"run_id": "synthetic"}
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(
+        trainer_module.logger,
+        "info",
+        lambda message, *args: messages.append(message % args),
+    )
+
+    trainer.fit([], None)
+
+    assert any(
+        "method=boundary_weighted_logit_consistency" in message
+        for message in messages
+    )
+
+
 def test_target_evaluator_remains_ordinary_single_pass_inference() -> None:
     source = (ROOT / "src/crisp/engine/evaluator.py").read_text(encoding="utf-8")
     lowered = source.lower()

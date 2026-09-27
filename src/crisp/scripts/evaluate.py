@@ -11,7 +11,7 @@ This script should:
 CRISP invariants preserved
 -------------------------
 This file must not alter CRISP’s mathematical identity:
-- no teacher usage at inference (per `instruct.md` §14),
+- no teacher usage at inference under the current CRISP protocol,
 - no per-pixel optimization at inference (solver is train-time only),
 - projector-on uses bounded alpha_hat; projector-off sets alpha_hat = 1,
 - forward path uses raw logits z and calibrated probs p̃ = sigmoid(alpha_hat * z)
