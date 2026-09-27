@@ -371,4 +371,5 @@ CRISP-authored code is released under the [MIT License](LICENSE). The
 and checkpoint compatibility. Upstream license or notice files are preserved
 where they are included (notably UACANet and U-Net++); other retained components
 remain subject to their upstream terms. Review those upstream repositories and
-terms before redistribution or commercial use.
+terms before redistribution or commercial use. See the
+[third-party notices](THIRD_PARTY_NOTICES.md) for component-specific details.

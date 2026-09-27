@@ -9,6 +9,11 @@ __pycache__/
 
 # OS/editor files
 .DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
 .ipynb_checkpoints/
 .venv/
 condaenv.*.requirements.txt
@@ -73,4 +78,6 @@ zip.py
 1_baseline/**/data/
 
 # Packaging
-src/*.egg-info/
+/build/
+/dist/
+*.egg-info/

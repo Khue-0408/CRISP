@@ -40,29 +40,3 @@ Scientific claim
 → manuscript claim
 
 No step may be silently skipped.
-
-## Current audit status
-
-The initial read-only audit found unresolved scientific risks involving:
-
-- metric correctness;
-- checkpoint and projector integrity;
-- configuration-to-manuscript drift;
-- ablation isolation;
-- provenance;
-- dataset and teacher identity;
-- result export.
-
-These are audit findings, not verified corrections.
-
-## Near-term engineering priorities
-
-1. Establish the canonical journal experiment contract.
-2. Establish the experiment and provenance registry.
-3. Add configuration-diff and scientific-invariant gates.
-4. Resolve P0 scientific implementation mismatches.
-5. Add missing controlled experiments.
-6. Establish a verified result-to-table pipeline.
-7. Perform a final public-surface and reproducibility audit.
-
-The canonical journal reference experiment remains intentionally undecided.
