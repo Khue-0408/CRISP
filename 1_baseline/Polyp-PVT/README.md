@@ -35,17 +35,13 @@ video polyp segmentation (`0.880 mean dice` and `0.802 mean IoU` on CVC-300-TV),
 ![](https://github.com/DengPingFan/Polyp-PVT/blob/main/Figs/github_r1.png)
 
 ### 3.2 Image-level Polyp Segmentation Compared Results:
-Historical result artifacts were distributed by the upstream project. Consult
-the [Polyp-PVT repository](https://github.com/DengPingFan/Polyp-PVT) for current
-availability.
+We also provide some result of baseline methods, You could download from [Google Drive](https://drive.google.com/file/d/1xvjRl70pZbOO6wI5p94CSpZK2RAUnUnx/view?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/14HtaePQk46YFDH5jRQDhwQ?pwd=qw9i) [code:qw9i], including our results and that of compared models.
 
 ### 3.3 Video Polyp Segmentation
 ![](https://github.com/DengPingFan/Polyp-PVT/blob/main/Figs/github_r2.png)
 
 ### 3.4 Video Polyp Segmentation Compared Results:
-Historical video result artifacts were distributed by the upstream project.
-Consult the [Polyp-PVT repository](https://github.com/DengPingFan/Polyp-PVT) for
-current availability.
+We also provide some result of baseline methods, You could download from [Google Drive](https://drive.google.com/file/d/1mITUCrrKhkwdsqyDd9-TRKF_K79Ehf8N/view?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/1K7taIbZS4n05BxasckLJ9A?pwd=rtvt) [code:rtvt], including our results and that of compared models.
 
 ## 4. Usage:
 ### 4.1 Recommended environment:
@@ -55,14 +51,11 @@ Pytorch 1.7.1
 torchvision 0.8.2
 ```
 ### 4.2 Data preparation:
-Obtain the training and testing datasets from their originating projects and
-move them into `./dataset/`.
+Downloading training and testing datasets and move them into ./dataset/, which can be found in this [Google Drive](https://drive.google.com/file/d/1pFxb9NbM8mj_rlSawTlcXG1OdVGAbRQC/view?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/1BTgT27VxvOgKpHrigwm7Bw?) [code:sydz].
 
 
 ### 4.3 Pretrained model:
-Consult the [Polyp-PVT repository](https://github.com/DengPingFan/Polyp-PVT)
-for current pretrained-model availability, then place an authorized artifact
-in `./pretrained_pth/` for initialization.
+You should download the pretrained model from [Google Drive](https://drive.google.com/drive/folders/1Eu8v9vMRvt-dyCH0XSV2i77lAd62nPXV?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/1Vez7iT2v_g7VYsDxRGE8HA) [code:w4vk], and then put it in the './pretrained_pth' folder for initialization. 
 
 ### 4.4 Training:
 Clone the repository:
@@ -88,13 +81,10 @@ Please note that we use the Matlab version to evaluate in our paper.
 
 
 ### 4.7 Well trained model:
-Consult the [Polyp-PVT repository](https://github.com/DengPingFan/Polyp-PVT)
-for current trained-model availability and place an authorized artifact in
-`./model_pth/`.
+You could download the trained model from [Google Drive](https://drive.google.com/drive/folders/1xC5Opwu5Afz4xiK5O9v4NnQOZY0A9-2j?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/1csPvdWqtbPBGrUWYO346Ug) [code:9rpy] and put the model in directory './model_pth'.
 
 ### 4.8 Pre-computed maps:
-Consult the [Polyp-PVT repository](https://github.com/DengPingFan/Polyp-PVT)
-for current pre-computed-map availability.
+[Google Drive](https://drive.google.com/file/d/1L0pFFmd9fbqnJnBwrM9cEV5nlRS32mbQ/view?usp=sharing)/[Baidu Drive](https://pan.baidu.com/s/1UO1VaqXRRFNq23ku9yfMaw) [code:x3jc]
 
 
 

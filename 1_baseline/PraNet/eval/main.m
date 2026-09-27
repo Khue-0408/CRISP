@@ -16,7 +16,7 @@ clc;
 
 % ---- 1. ResultMap Path Setting ----
 ResultMapPath = '../results/';
-Models = {'PraNet'}; %{'UNet','U-Net++','PraNet','SFA'};
+Models = {'PraNet'}; %{'UNet','UNet++','PraNet','SFA'};
 modelNum = length(Models);
 
 % ---- 2. Ground-truth Datasets Setting ----

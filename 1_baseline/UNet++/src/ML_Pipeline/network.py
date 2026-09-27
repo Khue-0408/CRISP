@@ -22,6 +22,7 @@ class VGGBlock(nn.Module):
 
         return out
 
+# Define a UNet++ class that uses VGGBlocks to create a U-Net style architecture
 class UNetPP(nn.Module):
     def __init__(self, num_classes, input_channels=3, deep_supervision=False, **kwargs):
         super().__init__()

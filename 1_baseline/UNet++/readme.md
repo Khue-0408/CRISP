@@ -1,4 +1,4 @@
-# Polyp Segmentation using U-Net++ for Colonoscopy Images
+# Polyp Segmentation using UNet++ for Colonoscopy Images
 
 ## Business Context
 Machine learning and deep learning technologies have made significant strides in healthcare and medical sciences. This project focuses on using such technologies for polyp recognition and segmentation in colonoscopy images, aiding medical professionals in their diagnosis.
@@ -12,7 +12,7 @@ The CVC-Clinic database comprises frames extracted from colonoscopy videos. The 
 
 ## Aim
 
-To implement polyp recognition and segmentation for colonoscopy images using a U-Net++ model.
+To implement polyp recognition and segmentation for colonoscopy images using UNet++ model.
 
 ---
 
@@ -28,10 +28,10 @@ To implement polyp recognition and segmentation for colonoscopy images using a U
 1. **Data Understanding**: Explore and understand the dataset.
 2. **Understanding Evaluation Metrics**: Familiarize with the metrics used for model evaluation.
 3. **UNet Architecture**: Understand the UNet architecture and its relevance in medical science applications.
-4. **U-Net++**: Learn about U-Net++ and how it differs from the standard U-Net.
+4. **UNet++**: Learn about UNet++ and how it differs from the standard UNet.
 5. **Environment Setup**: Prepare the working environment for the project.
 6. **Data Augmentation**: Generate augmented data to enhance model performance.
-7. **Model Building**: Develop the U-Net++ model using PyTorch.
+7. **Model Building**: Develop the UNet++ model using PyTorch.
 8. **Model Training**: Train the model (Note: GPU is recommended for faster training).
 9. **Model Prediction**: Make predictions using the trained model.
 

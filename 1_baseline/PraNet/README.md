@@ -52,7 +52,7 @@ or evaluation toolbox for your research, please cite this paper ([BibTeX](#4-cit
 
 - [2021/08/18] Improved version (PraNet-V2) has been released: https://github.com/DengPingFan/Polyp-PVT.
 
-- [2021/04/23] We update the results on four [Camouflaged Object Detection (COD)](https://github.com/DengPingFan/SINet) testing datasets (i.e., COD10K, NC4K, CAMO, and CHAMELEON) of our PraNet. Consult the [upstream PraNet repository](https://github.com/DengPingFan/PraNet) for current result and model availability.
+- [2021/04/23] We update the results on four [Camouflaged Object Detection (COD)](https://github.com/DengPingFan/SINet) testing dataset (i.e., COD10K, NC4K, CAMO, and CHAMELEON) of our PraNet, which is the retained on COD dataset from scratch. Download links at google drive are avaliable here: [result](https://drive.google.com/file/d/1h1sXnZA3uIeRXe9eUsH8Vp9i40VylauB/view?usp=sharing), [model weight](https://drive.google.com/file/d/1epdeolFS_JC8D8Pm_r0TaUJM-Qo4v49c/view?usp=sharing), [evaluation results](https://drive.google.com/file/d/1hY_S0-o5rezsBZCUegpDtAAmhy8jpW5N/view?usp=sharing).
 
 - [2021/01/21] :boom: Our PraNet has been used as the base segmentation model of [Prof. Michael I. Jordan](https://scholar.google.com/citations?user=yxUduqMAAAAJ&hl=zh-CN) et al's recent work (Distribution-Free, Risk-Controlling Prediction Sets, [Journal of the ACM 2021](https://arxiv.org/pdf/2101.02703.pdf)).
 
@@ -169,13 +169,16 @@ a single GeForce RTX TITAN GPU of 24 GB Memory.
 
 1. Downloading necessary data:
 
-    + obtain the testing datasets from their originating projects and move them into `./data/TestDataset/`. The expected datasets are CVC-300, CVC-ClinicDB, CVC-ColonDB, ETIS-LaribPolypDB, and Kvasir.
+    + downloading testing dataset and move it into `./data/TestDataset/`, 
+    which can be found in this [Google Drive Link (327.2MB)](https://drive.google.com/file/d/1Y2z7FD5p5y31vkZwQQomXFRB0HutHyao/view?usp=sharing). It contains five sub-datsets: CVC-300 (60 test samples), CVC-ClinicDB (62 test samples), CVC-ColonDB (380 test samples), ETIS-LaribPolypDB (196 test samples), Kvasir (100 test samples).
     
-    + obtain the Kvasir-SEG and CVC-ClinicDB training datasets from their originating projects and move them into `./data/TrainDataset/`.
+    + downloading training dataset and move it into `./data/TrainDataset/`, 
+    which can be found in this [Google Drive Link (399.5MB)](https://drive.google.com/file/d/1YiGHLw4iTvKdvbT6MgwO9zcCv8zJ_Bnb/view?usp=sharing). It contains two sub-datasets: Kvasir-SEG (900 train samples) and CVC-ClinicDB (550 train samples).
     
-    + consult the [upstream PraNet repository](https://github.com/DengPingFan/PraNet) for current pretrained-weight availability and place an authorized artifact at `snapshots/PraNet_Res2Net/PraNet-19.pth`.
+    + downloading pretrained weights and move it into `snapshots/PraNet_Res2Net/PraNet-19.pth`, 
+    which can be found in this [Google Drive Link (124.6MB)](https://drive.google.com/file/d/1lJv8XVStsp3oNKZHaSr42tawdMOq6FLP/view?usp=sharing).
     
-    + obtain Res2Net weights from the upstream Res2Net project or another authorized source.
+    + downloading Res2Net weights [Google Drive (98.4MB)](https://drive.google.com/file/d/1FjXh_YG1hLGPPM6j-c8UxHcIWtzGGau5/view?usp=sharing).
 
 1. Training Configuration:
 
@@ -193,17 +196,15 @@ a single GeForce RTX TITAN GPU of 24 GB Memory.
 
 ### 3.2 Evaluating your trained model:
 
-Matlab evaluation instructions are retained in `./eval/main.m`; run it to
-generate evaluation results in `./res/`. Consult the
-[upstream PraNet repository](https://github.com/DengPingFan/PraNet) for current
-evaluation-toolbox availability.
+Matlab: One-key evaluation is written in MATLAB code ([Google Drive Link](https://drive.google.com/file/d/1eKUpny19kLaCpZl7jjan408238h5PGIO/view?usp=sharing)), 
+please follow this the instructions in `./eval/main.m` and just run it to generate the evaluation results in `./res/`.
+The complete evaluation toolbox (including data, map, eval code, and res): [Google Drive Link (380.6MB)](https://drive.google.com/file/d/1FJxb9DZMzPWFffkbchU0s9Zcf5oe7qcT/view?usp=sharing). 
 
 Python: Please refer to the work of ACMMM2021 https://github.com/plemeri/UACANet
 
 
 ### 3.3 Pre-computed maps: 
-Consult the [upstream PraNet repository](https://github.com/DengPingFan/PraNet)
-for current pre-computed-map availability.
+They can be found in [Google Drive Link (61.6MB)](https://drive.google.com/file/d/1CJ6CTUdenumgiKXieuKXFohefRJwyFPY/view?usp=sharing).
 
 
 ## 4. Citation

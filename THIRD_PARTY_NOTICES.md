@@ -15,8 +15,8 @@ component.
 
 ## U-Net++
 
-- Retained source: `1_baseline/U-Net++`
-- Upstream license copy: [`1_baseline/U-Net++/LICENSE`](1_baseline/U-Net++/LICENSE)
+- Retained source: `1_baseline/UNet++`
+- Upstream license copy: [`1_baseline/UNet++/LICENSE`](1_baseline/UNet++/LICENSE)
 
 Consult the included upstream license before using or redistributing this
 component.
@@ -48,5 +48,6 @@ project; consult the upstream repository for its current terms.
 
 No explicit license file was identified in the upstream repository during this
 release audit. The current CRISP U-Net retains substantial implementation
-lineage and similarity to that source. No permission is inferred;
-redistribution or reuse requires review of rights from the upstream project.
+lineage and checkpoint keyspace from that source. No redistribution permission
+is inferred by this repository; redistribution or reuse requires review of
+rights from the upstream project.

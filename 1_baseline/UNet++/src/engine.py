@@ -105,6 +105,7 @@ val_loader = torch.utils.data.DataLoader(
     shuffle=False,
     drop_last=False)
 
+# Create the UNet++ model
 model = UNetPP(1, 3, True)
 
 # Check for GPU availability and move the model to GPU if available

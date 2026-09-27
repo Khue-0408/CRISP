@@ -39,7 +39,7 @@ def _skip_if_polyp_pvt_backbone_missing(model_cfg: dict) -> None:
         (
             "unetpp",
             {"name": "unetpp", "in_channels": 3, "num_classes": 1},
-            "1_baseline/U-Net++/output/models/model.pth",
+            "1_baseline/UNet++/output/models/model.pth",
         ),
         (
             "pranet",

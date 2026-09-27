@@ -13,6 +13,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts" / "run_crisp_five_seeds.sh"
 SEEDS = (2026, 2027, 2028, 2029, 2030)
+PUBLIC_TEXT_SUFFIXES = {".md", ".py", ".sh", ".toml", ".txt", ".yaml", ".yml"}
+PUBLIC_ROOT_FILES = ("README.md", "THIRD_PARTY_NOTICES.md", "Makefile")
+PUBLIC_ROOTS = ("docs", "configs", "scripts", "src/crisp", "tests", ".github")
+
+
+def _crisp_public_text_files() -> list[Path]:
+    files = [ROOT / name for name in PUBLIC_ROOT_FILES if (ROOT / name).is_file()]
+    for relative_root in PUBLIC_ROOTS:
+        directory = ROOT / relative_root
+        files.extend(
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and path.suffix.lower() in PUBLIC_TEXT_SUFFIXES
+        )
+    return sorted(set(files))
 
 
 def _bash() -> str:
@@ -111,3 +126,20 @@ def test_ci_uses_python_310_and_cpu_safe_release_gates() -> None:
     ):
         assert test_file in workflow
     assert "train_crisp" not in workflow
+
+
+def test_crisp_authored_public_surfaces_use_canonical_terminology() -> None:
+    historical_prefix = "thesis" + "_"
+    bad_model_spelling = "UNet" + "++"
+    lightweight_label = "Lightweight" + " Baseline"
+    legacy_mirror = "drive" + ".google.com"
+
+    for path in _crisp_public_text_files():
+        text = path.read_text(encoding="utf-8")
+        relative = path.relative_to(ROOT)
+        assert historical_prefix not in text, relative
+        assert lightweight_label not in text, relative
+        assert legacy_mirror not in text, relative
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if bad_model_spelling in line:
+                assert "1_baseline/" in line, (relative, line_number)
