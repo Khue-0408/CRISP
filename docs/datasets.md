@@ -30,6 +30,11 @@ Current protocol:
 Fraction-derived source splits and automatically discovered evaluation membership
 remain available only to configs that do not opt into `protocol_profile: current_crisp`.
 
+The seven exact current-protocol membership manifests are not present in this
+repository. The manuscript availability statement that those split files are
+released with the code is therefore not currently satisfied; the historical
+membership must not be regenerated from seeds, fractions, or directory order.
+
 Check the data tree with:
 
 ```bash

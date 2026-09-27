@@ -17,6 +17,8 @@ evaluation, and export provenance.
 The codebase implements the method and its protocol gates. Datasets, exact
 membership manifests, pretrained artifacts, trained checkpoints, and complete
 raw per-seed metric artifacts are not committed to this repository.
+Consequently, the manuscript statement that the exact split files are released
+with the code is not currently satisfied by this repository.
 
 ## Method
 
