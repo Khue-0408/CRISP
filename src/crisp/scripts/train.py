@@ -22,6 +22,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from crisp.models.teacher_wrapper import FrozenTeacher, TeacherEnsemble
+from crisp.modules.bwcr_control import resolve_bwcr_control
 from crisp.modules.margin_label_smoothing import resolve_margin_label_smoothing_control
 from crisp.protocol import validate_current_training_protocol
 from crisp.registry import (
@@ -205,6 +206,7 @@ def main(cfg: DictConfig) -> None:
     assert isinstance(config, dict), "Hydra config must resolve to a dict-like structure."
     validate_current_training_protocol(config)
     margin_control = resolve_margin_label_smoothing_control(config)
+    bwcr_control = resolve_bwcr_control(config)
 
     # Setup.
     seed = config.get("seed", 0)
@@ -233,6 +235,8 @@ def main(cfg: DictConfig) -> None:
     teacher_ensemble = (
         None if margin_control is not None else _maybe_build_teacher_ensemble(config)
     )
+    if bwcr_control is not None:
+        teacher_ensemble = None
 
     # Build datasets and dataloaders.
     train_cfg = config.get("training", {})

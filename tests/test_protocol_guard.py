@@ -20,6 +20,7 @@ CURRENT_CONFIGS = {
     "thesis_unet_crisp.yaml",
     "thesis_unet_matched_beta0.yaml",
     "thesis_unet_margin_label_smoothing.yaml",
+    "thesis_unet_boundary_weighted_logit_consistency.yaml",
     "thesis_unetpp_baseline.yaml",
     "thesis_unetpp_crisp.yaml",
     "thesis_unetpp_matched_beta0.yaml",
@@ -27,6 +28,7 @@ CURRENT_CONFIGS = {
     "thesis_pranet_crisp.yaml",
     "thesis_pranet_matched_beta0.yaml",
     "thesis_pranet_margin_label_smoothing.yaml",
+    "thesis_pranet_boundary_weighted_logit_consistency.yaml",
     "thesis_pranet_teacher_robustness_equal.yaml",
     "thesis_pranet_teacher_robustness_weighted.yaml",
 }

@@ -40,8 +40,9 @@ def resolve_margin_label_smoothing_control(
     method = config.get("method", {})
     control = config.get("calibration_control")
     method_name = method.get("name") if isinstance(method, Mapping) else None
+    control_name = control.get("name") if isinstance(control, Mapping) else None
 
-    if control is None and method_name != CONTROL_NAME:
+    if method_name != CONTROL_NAME and control_name != CONTROL_NAME:
         return None
     if not isinstance(method, Mapping):
         raise ValueError("Margin Label Smoothing requires a method mapping.")

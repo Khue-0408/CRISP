@@ -11,8 +11,6 @@ This module orchestrates:
 - optimization and checkpointing.
 
 The trainer is designed to keep high-level control flow explicit and debuggable.
-
-CRISP reference: instruct.md §12, §13, §15.
 """
 
 from __future__ import annotations
@@ -27,8 +25,20 @@ from typing import Any, Dict, Optional, Sequence
 import torch
 import torch.nn as nn
 
+from crisp.data.bwcr_views import (
+    BWCRAugmentationContract,
+    BWCRSourceViewPair,
+    bwcr_validity_intersection,
+    inverse_align_bwcr_tensor,
+    sample_bwcr_pair,
+)
 from crisp.engine.checkpointing import save_checkpoint
 from crisp.modules.boundary import compute_boundary_weight
+from crisp.modules.bwcr_consistency import (
+    bwcr_consistency_loss,
+    native_bwcr_boundary_field,
+)
+from crisp.modules.bwcr_control import resolve_bwcr_control
 from crisp.modules.calibration import calibrate_logits_with_alpha
 from crisp.modules.losses import (
     baseline_bce_dice_loss,
@@ -85,6 +95,89 @@ class TrainStepOutput:
     tensors: Optional[Dict[str, torch.Tensor]] = None
 
 
+@dataclass(frozen=True)
+class BWCRTrainingBatch:
+    """Two keyed source views plus canonical tensors and replay records."""
+
+    canonical_images: torch.Tensor
+    canonical_masks: torch.Tensor
+    view1_images: torch.Tensor
+    view1_masks: torch.Tensor
+    view2_images: torch.Tensor
+    pairs: tuple[BWCRSourceViewPair, ...]
+
+
+def _metadata_sequence(
+    metadata: Dict[str, Any], key: str, batch_size: int
+) -> tuple[str, ...]:
+    values = metadata.get(key)
+    if not isinstance(values, (list, tuple)) or len(values) != batch_size:
+        raise ValueError(f"BWCR requires one stable {key} value per source sample.")
+    if any(not isinstance(value, str) or not value for value in values):
+        raise ValueError(f"BWCR requires non-empty string {key} values.")
+    return tuple(values)
+
+
+def prepare_bwcr_training_batch(
+    batch: Dict[str, Any],
+    *,
+    contract: BWCRAugmentationContract,
+    experiment_seed: int,
+    epoch: int,
+    device: torch.device,
+) -> BWCRTrainingBatch:
+    """Create the sole two stochastic views from canonical source tensors."""
+
+    canonical_images = batch.get("canonical_image")
+    canonical_masks = batch.get("canonical_mask")
+    if not isinstance(canonical_images, torch.Tensor) or not isinstance(
+        canonical_masks, torch.Tensor
+    ):
+        raise ValueError("BWCR requires canonical_image and canonical_mask tensors.")
+    if canonical_images.ndim != 4 or canonical_masks.ndim != 4:
+        raise ValueError("BWCR canonical tensors must have batched BCHW shapes.")
+    if canonical_images.shape[0] != canonical_masks.shape[0]:
+        raise ValueError("BWCR canonical image/mask batch sizes must match.")
+
+    metadata = batch.get("meta")
+    if not isinstance(metadata, dict):
+        raise ValueError("BWCR requires collated source metadata.")
+    batch_size = canonical_images.shape[0]
+    dataset_names = _metadata_sequence(metadata, "dataset_name", batch_size)
+    image_ids = _metadata_sequence(metadata, "image_id", batch_size)
+    splits = _metadata_sequence(metadata, "split", batch_size)
+    representations = _metadata_sequence(
+        metadata, "source_representation", batch_size
+    )
+    if any(split != "train" for split in splits):
+        raise ValueError("BWCR is restricted to source-training samples.")
+    if any(value != "canonical_pre_stochastic" for value in representations):
+        raise ValueError("BWCR refuses source tensors that may already be augmented.")
+
+    canonical_images = canonical_images.to(device)
+    canonical_masks = canonical_masks.to(device)
+    pairs = tuple(
+        sample_bwcr_pair(
+            canonical_images[index],
+            canonical_masks[index],
+            contract,
+            experiment_seed=experiment_seed,
+            epoch=epoch,
+            dataset_name=dataset_names[index],
+            image_id=image_ids[index],
+        )
+        for index in range(batch_size)
+    )
+    return BWCRTrainingBatch(
+        canonical_images=canonical_images,
+        canonical_masks=canonical_masks,
+        view1_images=torch.stack([pair.view_0.image for pair in pairs]),
+        view1_masks=torch.stack([pair.view_0.mask for pair in pairs]),
+        view2_images=torch.stack([pair.view_1.image for pair in pairs]),
+        pairs=pairs,
+    )
+
+
 def _training_output_with_native_aux(
     final_loss: torch.Tensor,
     logs: Dict[str, float],
@@ -137,11 +230,15 @@ class Trainer:
         self.config = config
         self.run_record = run_record
         self.margin_label_smoothing = resolve_margin_label_smoothing_control(config)
+        self.bwcr_control = resolve_bwcr_control(config)
         if self.margin_label_smoothing is not None:
             if projector is not None or teacher_ensemble is not None:
                 raise ValueError(
                     "Margin Label Smoothing cannot receive a projector or teacher ensemble."
                 )
+        if self.bwcr_control is not None:
+            if projector is not None or teacher_ensemble is not None:
+                raise ValueError("BWCR cannot receive a projector or teacher ensemble.")
 
         # Determine device.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,7 +335,7 @@ class Trainer:
         self.newton_steps = solver_cfg.get("newton_steps", 3)
         self.bisection_steps = solver_cfg.get("bisection_steps", 12)
 
-        # Thesis schedule config. When absent, keep legacy warmup behavior for
+        # Current CRISP schedule config. When absent, keep legacy warmup behavior for
         # focused unit tests and explicit debug configs.
         schedule_cfg = crisp_cfg.get("schedule", {})
         phases_cfg = train_cfg.get("phases", {})
@@ -288,7 +385,7 @@ class Trainer:
 
     def _crisp_schedule_state(self, epoch: int) -> Dict[str, Any]:
         """
-        Return thesis-aligned CRISP schedule state for one epoch.
+        Return the current CRISP schedule state for one epoch.
 
         Updated experimental contract:
         - Phase I: baseline-only warm-up for 25 epochs.
@@ -347,7 +444,7 @@ class Trainer:
         if self.optimizer_name != "adamw":
             raise ValueError(
                 f"Unsupported optimizer '{self.optimizer_name}'. "
-                "The paper-faithful implementation currently supports only AdamW."
+                "The current CRISP protocol supports only AdamW."
             )
         train_cfg = self.config.get("training", {})
         lr_student = train_cfg.get("lr_student", 1e-4)
@@ -376,17 +473,114 @@ class Trainer:
             return None
         raise ValueError(
             f"Unsupported scheduler '{self.scheduler_name}'. "
-            "Use `cosine` for the paper default or `none` for explicit ablations."
+            "Use `cosine` for the current protocol or `none` for explicit ablations."
+        )
+
+    def _train_bwcr_step(
+        self, batch: Dict[str, Any], epoch: int
+    ) -> TrainStepOutput:
+        """Run the standalone source-only BWCR control at full fixed strength."""
+
+        if self.bwcr_control is None:
+            raise RuntimeError("BWCR step requested without a resolved control.")
+        prepared = prepare_bwcr_training_batch(
+            batch,
+            contract=self.bwcr_control.augmentation,
+            experiment_seed=self.seed,
+            epoch=epoch,
+            device=self.device,
+        )
+
+        with torch.amp.autocast(
+            device_type=self.amp_device_type,
+            enabled=self.mixed_precision and self.amp_device_type == "cuda",
+        ):
+            view1_output = self.model(prepared.view1_images)
+            view2_output = self.model(prepared.view2_images)
+
+            final_losses = baseline_bce_dice_loss(
+                view1_output.logits, prepared.view1_masks
+            )
+            final_loss = final_losses["loss"]
+            native_aux = (
+                pranet_native_side_losses(view1_output.aux, prepared.view1_masks)
+                if isinstance(self.model, PraNet)
+                else None
+            )
+            supervised_host_loss = final_loss
+            if native_aux is not None:
+                supervised_host_loss = supervised_host_loss + native_aux[
+                    "native_aux_loss"
+                ]
+
+            z1_inverse = torch.stack(
+                [
+                    inverse_align_bwcr_tensor(
+                        view1_output.logits[index],
+                        pair.view_0.record.geometry,
+                        interpolation="bilinear",
+                    )
+                    for index, pair in enumerate(prepared.pairs)
+                ]
+            )
+            z2_inverse = torch.stack(
+                [
+                    inverse_align_bwcr_tensor(
+                        view2_output.logits[index],
+                        pair.view_1.record.geometry,
+                        interpolation="bilinear",
+                    )
+                    for index, pair in enumerate(prepared.pairs)
+                ]
+            )
+            validity = torch.stack(
+                [bwcr_validity_intersection(pair) for pair in prepared.pairs]
+            )
+            boundary_field = native_bwcr_boundary_field(prepared.canonical_masks)
+            consistency = bwcr_consistency_loss(
+                z1_inverse,
+                z2_inverse,
+                validity,
+                boundary_field.lambda_map,
+            )
+            total = supervised_host_loss + consistency
+
+        logs = {key: value.item() for key, value in final_losses.items()}
+        logs["final_loss"] = final_loss.item()
+        if native_aux is not None:
+            logs.update({key: value.item() for key, value in native_aux.items()})
+        logs.update(
+            {
+                "supervised_host_loss": supervised_host_loss.item(),
+                "bwcr_consistency_loss": consistency.item(),
+                "loss": total.item(),
+            }
+        )
+        return TrainStepOutput(
+            loss=total,
+            logs=logs,
+            tensors={
+                "bwcr_view1_image": prepared.view1_images,
+                "bwcr_view1_mask": prepared.view1_masks,
+                "bwcr_view2_image": prepared.view2_images,
+                "bwcr_z1_inverse": z1_inverse,
+                "bwcr_z2_inverse": z2_inverse,
+                "bwcr_validity": validity,
+                "bwcr_lambda_map": boundary_field.lambda_map,
+                "bwcr_consistency_loss": consistency,
+                "supervised_host_loss": supervised_host_loss,
+            },
         )
 
     def train_one_step(
         self, batch: Dict[str, Any], epoch: int, step: int
     ) -> TrainStepOutput:
         """
-        Run one training step with full CRISP pipeline or baseline.
-
-        CRISP reference: instruct.md §12 (full objective), §13 (detach boundaries).
+        Run one training step with the selected explicit method/control branch.
         """
+        if self.bwcr_control is not None:
+            return self._train_bwcr_step(batch, epoch)
+
         images = batch["image"].to(self.device)
         masks = batch["mask"].to(self.device)
 
@@ -701,7 +895,7 @@ class Trainer:
         candidate_paths: dict[int, Path] = {}
         if self.require_validation and val_loader is None:
             raise ValueError(
-                "This experiment requires a source-validation loader for paper-faithful "
+                "This experiment requires a source-validation loader for current-protocol "
                 "checkpoint selection, but no validation loader was provided."
             )
         if val_loader is not None and (Path(output_dir) / "best.pt").exists():

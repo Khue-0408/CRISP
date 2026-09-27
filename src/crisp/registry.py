@@ -194,21 +194,34 @@ def build_dataset(config: Dict[str, Any], split: str) -> Any:
     """
     from crisp.data.datasets import build_manifest_train_val_dataset
     from crisp.data.transforms import build_eval_transforms, build_train_transforms
+    from crisp.modules.bwcr_control import resolve_bwcr_control
 
     data_cfg = dict(config.get("source_data", config))
     split_cfg = dict(data_cfg.get("splits", {}).get(split, {}))
     merged_cfg = {**data_cfg, **split_cfg}
+    source_split_mode = data_cfg.get("source_split", {}).get("mode")
+    bwcr_control = resolve_bwcr_control(config) if split == "train" else None
 
-    if split == "train":
+    if bwcr_control is not None:
+        if source_split_mode != "manifest":
+            raise ValueError("BWCR source training requires explicit manifest membership.")
+        transforms = None
+    elif split == "train":
         transforms = build_train_transforms(merged_cfg)
     else:
         transforms = build_eval_transforms(merged_cfg)
 
-    source_split_mode = data_cfg.get("source_split", {}).get("mode")
     if source_split_mode not in (None, "fraction", "manifest"):
         raise ValueError(f"Unknown source split mode: {source_split_mode!r}")
     if split in {"train", "val"} and source_split_mode == "manifest":
-        return build_manifest_train_val_dataset(data_cfg, split, transforms)
+        return build_manifest_train_val_dataset(
+            data_cfg,
+            split,
+            transforms,
+            canonical_source_size=(
+                bwcr_control.augmentation.image_size if bwcr_control is not None else None
+            ),
+        )
     if str(data_cfg.get("mode", "")).lower() == "local_train_test" and split in {"train", "val"}:
         return build_local_train_val_dataset(
             data_cfg=data_cfg,

@@ -20,12 +20,16 @@ from pathlib import Path
 import random
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+import numpy as np
+from PIL import Image
 from torch.utils.data import Dataset
 
 from crisp.data.io_utils import (
     build_stem_to_path_map,
     candidate_dir_names,
     list_supported_files,
+    numpy_image_to_tensor,
+    numpy_mask_to_tensor,
     read_binary_mask,
     read_rgb_image,
 )
@@ -101,6 +105,7 @@ class BinarySegmentationDataset(Dataset):
         self,
         samples: List[SampleRecord],
         transforms: Optional[Any] = None,
+        canonical_source_size: Optional[Tuple[int, int]] = None,
     ) -> None:
         """
         Initialize the dataset.
@@ -111,9 +116,15 @@ class BinarySegmentationDataset(Dataset):
             List of dataset sample records.
         transforms:
             Optional transform pipeline applied jointly to image and mask.
+        canonical_source_size:
+            Optional deterministic pre-stochastic source frame for BWCR. This
+            mode is mutually exclusive with the ordinary transform pipeline.
         """
+        if transforms is not None and canonical_source_size is not None:
+            raise ValueError("Canonical source mode cannot apply ordinary train transforms.")
         self.samples = samples
         self.transforms = transforms
+        self.canonical_source_size = canonical_source_size
         self.source_split_provenance: Optional[Dict[str, Any]] = None
         self.evaluation_membership_provenance: Optional[Dict[str, Any]] = None
 
@@ -142,11 +153,26 @@ class BinarySegmentationDataset(Dataset):
         image_np = read_rgb_image(rec.image_path)
         mask_np = read_binary_mask(rec.mask_path)
 
-        if self.transforms is not None:
+        if self.canonical_source_size is not None:
+            height, width = self.canonical_source_size
+            image_np = np.asarray(
+                Image.fromarray(image_np).resize(
+                    (width, height), resample=Image.Resampling.BILINEAR
+                ),
+                dtype=np.uint8,
+            )
+            mask_np = np.asarray(
+                Image.fromarray((mask_np * 255).astype(np.uint8), mode="L").resize(
+                    (width, height), resample=Image.Resampling.NEAREST
+                ),
+                dtype=np.uint8,
+            )
+            image_t = numpy_image_to_tensor(image_np)
+            mask_t = numpy_mask_to_tensor((mask_np >= 128).astype(np.uint8))
+        elif self.transforms is not None:
             image_t, mask_t = self.transforms(image_np, mask_np)
         else:
             # Fallback: simple conversion without augmentation.
-            from crisp.data.io_utils import numpy_image_to_tensor, numpy_mask_to_tensor
             image_t = numpy_image_to_tensor(image_np)
             mask_t = numpy_mask_to_tensor(mask_np)
 
@@ -158,6 +184,13 @@ class BinarySegmentationDataset(Dataset):
             "mask_path": str(rec.mask_path),
         }
 
+        if self.canonical_source_size is not None:
+            meta["source_representation"] = "canonical_pre_stochastic"
+            return {
+                "canonical_image": image_t,
+                "canonical_mask": mask_t,
+                "meta": meta,
+            }
         return {"image": image_t, "mask": mask_t, "meta": meta}
 
 
@@ -377,7 +410,10 @@ def _strict_stem_map(directory: Path) -> Dict[str, Path]:
 
 
 def build_manifest_train_val_dataset(
-    data_cfg: Dict[str, Any], split: str, transforms: Optional[Any]
+    data_cfg: Dict[str, Any],
+    split: str,
+    transforms: Optional[Any],
+    canonical_source_size: Optional[Tuple[int, int]] = None,
 ) -> BinarySegmentationDataset:
     """Consume explicit source membership; never derive it from a seed or fraction."""
     if split not in {"train", "val"}:
@@ -431,7 +467,9 @@ def build_manifest_train_val_dataset(
     )
     selected = train_manifest if split == "train" else val_manifest
     dataset = BinarySegmentationDataset(
-        [available[sample_id] for sample_id in selected.ids], transforms=transforms
+        [available[sample_id] for sample_id in selected.ids],
+        transforms=transforms,
+        canonical_source_size=canonical_source_size,
     )
     dataset.source_split_provenance = {
         "mode": "manifest",
