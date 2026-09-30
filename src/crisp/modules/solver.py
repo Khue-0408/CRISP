@@ -34,9 +34,11 @@ def stabilize_logits_for_solver(
     logits:
         Raw student logits z(u) of shape [B, 1, H, W].
     zmax:
-        Maximum absolute clipping value before stabilization (default 12.0).
+        Maximum absolute clipping value before stabilization (current protocol
+        value 8.0).
     zeta:
-        Minimum absolute magnitude enforced after clipping (default 1e-2).
+        Minimum absolute magnitude enforced after clipping (current protocol
+        value 0.1).
 
     Returns
     -------

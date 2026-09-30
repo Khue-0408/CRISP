@@ -99,6 +99,39 @@ def test_five_seed_runner_rejects_unsupported_host_or_mode(tmp_path: Path) -> No
     assert not log.exists()
 
 
+@pytest.mark.parametrize("override", ["seed=9", "+seed=9", "++seed=9"])
+def test_five_seed_runner_rejects_seed_override_before_wrapper_invocation(
+    tmp_path: Path, override: str
+) -> None:
+    runner, log = _runner_fixture(tmp_path)
+    result = _run(runner, log, "unet", "crisp", override)
+
+    assert result.returncode == 2
+    assert "Seed overrides are not allowed" in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "-m",
+        "--multirun",
+        "--multirun=true",
+        "hydra.mode=MULTIRUN",
+        "hydra.sweeper.params.seed=1,2",
+    ],
+)
+def test_five_seed_runner_rejects_multirun_before_wrapper_invocation(
+    tmp_path: Path, argument: str
+) -> None:
+    runner, log = _runner_fixture(tmp_path)
+    result = _run(runner, log, "pranet", "baseline", argument)
+
+    assert result.returncode == 2
+    assert "Hydra multirun and sweep controls are not supported" in result.stderr
+    assert not log.exists()
+
+
 def test_five_seed_runner_stops_on_first_failure(tmp_path: Path) -> None:
     runner, log = _runner_fixture(tmp_path, fail_seed=2028)
     result = _run(runner, log, "unet", "baseline")

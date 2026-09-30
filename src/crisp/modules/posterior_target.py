@@ -34,7 +34,7 @@ def compute_boundary_posterior_target(
     teacher_posterior:
         Aggregated teacher posterior p_T of shape [B, 1, H, W].
     lambda_value:
-        Boundary posterior mixing strength (default 0.80).
+        Boundary posterior mixing strength (current protocol value 1.0).
 
     Returns
     -------
@@ -70,7 +70,8 @@ def clip_posterior_target(
     target:
         Boundary posterior target t*.
     eps_target:
-        Clipping parameter epsilon (default 1e-4) to avoid degenerate 0/1 targets.
+        Clipping parameter epsilon (current protocol value 1e-3) to avoid
+        degenerate 0/1 targets.
 
     Returns
     -------

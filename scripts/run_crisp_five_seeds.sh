@@ -12,6 +12,19 @@ HOST="$1"
 MODE="$2"
 shift 2
 
+for arg in "$@"; do
+  case "$arg" in
+    seed=*|+seed=*|++seed=*)
+      echo "Seed overrides are not allowed; the runner locks seeds 2026-2030." >&2
+      exit 2
+      ;;
+    -m|--multirun|--multirun=*|hydra.mode=*|+hydra.mode=*|++hydra.mode=*|hydra.sweep.*|+hydra.sweep.*|++hydra.sweep.*|hydra.sweeper.*|+hydra.sweeper.*|++hydra.sweeper.*)
+      echo "Hydra multirun and sweep controls are not supported by the five-seed runner." >&2
+      exit 2
+      ;;
+  esac
+done
+
 case "$HOST:$MODE" in
   unet:baseline) WRAPPER="train_crisp_unet_baseline.sh" ;;
   unet:crisp) WRAPPER="train_crisp_unet_crisp.sh" ;;
